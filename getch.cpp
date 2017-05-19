@@ -1,7 +1,8 @@
 #include <termios.h>
 #include <unistd.h>
 #include <assert.h>
-#include <cstdlib>
+#include <cstring>
+#include <cstdio>
 #include "getch.h"
 
 int getch()
