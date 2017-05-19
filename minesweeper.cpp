@@ -1,9 +1,11 @@
 #include <cstdio>                                      /********************/
 #include <iostream>                                    /*   made by kkke   */
-#include <time.h>
+#include <time.h>                                      /********************/
 #include <cstring>
 #include <cstdlib>
+#include <cmath>
 #include "getch.h"
+#include <stdlib.h>
 
 #define MAXX 20
 #define MAXY 20
@@ -122,7 +124,7 @@ bool win_game()
 void game_start()
 {
 	do{
-		system("cls");
+		system("clear");
 		print_map();
 		if(win_game())
 		{
@@ -130,7 +132,7 @@ void game_start()
 			return;
 		}
 	}while(get_input());
-	system("cls");
+	system("clear");
 	print_map();
 	cout<<"you lose!"<<endl;
 }
