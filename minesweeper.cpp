@@ -24,7 +24,7 @@ char c_input;
 
 void print_map()
 {
-	for(int j=-2;j<MAXY*3;j++)cout<<'-';
+	for(int i=-2;i<MAXY*3;i++)cout<<'-';
 	cout<<"    ********"<<endl;
 	for(int i=0;i<MAXX;i++)
 	{
@@ -182,6 +182,8 @@ void init()
 				  mymap[i][j]++;
 		}
 	}
+	the_rest_of_mine=MINE_NUM;
+	the_rest_of_square=MAXY*MAXX;
 }
 
 bool new_game_start()
