@@ -1,3 +1,3 @@
 getch.o:getch.cpp getch.h
-	g++ -o $@ $<
+	g++ -c -o $@ $<
 
