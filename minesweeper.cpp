@@ -7,76 +7,96 @@
 #include "getch.h"
 #include <stdlib.h>
 
-#define MAXX 20
 #define MAXY 20
+#define MAXX 20
 #define MINE_NUM 40
 
 using namespace std;
 
-int mymap[MAXY][MAXX];
-bool mymine[MAXY][MAXX];
-bool mysight[MAXY][MAXX];
-bool myflag[MAXY][MAXX];
-int nowx, nowy;
+int mymap[MAXX][MAXY];
+bool mymine[MAXX][MAXY];
+bool mysight[MAXX][MAXY];
+bool myflag[MAXX][MAXY];
+int nowy, nowx;
 int the_rest_of_mine=MINE_NUM;
-int the_rest_of_square=MAXX*MAXY;
+int the_rest_of_square=MAXY*MAXX;
 char c_input;
 
 void print_map()
 {
-   for(int j=-2;j<MAXX*3;j++)cout<<'-';
-   cout<<"    ********"<<endl;
-   for(int i=0;i<MAXY;i++)
-   {
-    cout<<'|';
-   	for(int j=0;j<MAXX;j++)
-   	{
-   		if((i==nowy)&&(j==nowx))cout<<'[';
-   		else cout<<' ';
-   		if(myflag[i][j])cout<<'@';
-   		else if(mysight[i][j])
-   		{
-   			if(mymine[i][j])cout<<'*';
-   			else if(mymap[i][j])cout<<mymap[i][j];
-   			else cout<<" ";
-   		}
-   		else cout<<'.';
-   		if((i==nowy)&&(j==nowx))cout<<']';
-   		else cout<<' ';
-   	}
-   	cout<<'|';
-   	switch (i)
-   	{
-   	    case 0: cout<<"    * made *";break;
-   	    case 1: cout<<"    *  by  *";break;
-   	    case 2: cout<<"    * kkke *";break;
-   	    case 3: cout<<"    ********";break;
-   	    case 7: cout<<"    up   :w";break;
-   	    case 8: cout<<"    down :s";break;
-   	    case 9: cout<<"    left :a";break;
-       case 10: cout<<"    right:d";break;
-       case 11: cout<<"    flag :j";break;
-       case 12: cout<<"    sweep:space";break;
-       case 15: cout<<"  rest square:"<<the_rest_of_square;break;
-       case 16: cout<<"  rest mine  :"<<the_rest_of_mine;break;
-   	}
-   	cout<<endl;
-   }
-   for(int j=-2;j<MAXX*3;j++)cout<<'-';
-   cout<<endl;
+	for(int j=-2;j<MAXY*3;j++)cout<<'-';
+	cout<<"    ********"<<endl;
+	for(int i=0;i<MAXX;i++)
+	{
+		cout<<'|';
+		for(int j=0;j<MAXY;j++)
+		{
+			if((i==nowx)&&(j==nowy))cout<<'[';
+			else cout<<' ';
+			if(myflag[i][j])cout<<'@';
+			else if(mysight[i][j])
+			{
+				if(mymine[i][j])cout<<'*';
+				else if(mymap[i][j])cout<<mymap[i][j];
+				else cout<<" ";
+			}
+			else cout<<'.';
+			if((i==nowx)&&(j==nowy))cout<<']';
+			else cout<<' ';
+		}
+		cout<<'|';
+		switch (i)
+		{
+			case 0:		cout<<"    * made *";break;
+			case 1:		cout<<"    *  by  *";break;
+			case 2:		cout<<"    * kkke *";break;
+			case 3:		cout<<"    ********";break;
+			case 6:		cout<<"    up   :w";break;
+			case 7:		cout<<"    down :s";break;
+			case 8:		cout<<"    left :a";break;
+			case 9:		cout<<"    right:d";break;
+			case 10:	cout<<"    flag :j";break;
+			case 11:	cout<<"    sweep:space";break;
+			case 12:	cout<<"    quit :q";break;
+			case 15:	cout<<"  rest square:"<<the_rest_of_square;break;
+			case 16:	cout<<"  rest mine  :"<<the_rest_of_mine;break;
+		}
+		cout<<endl;
+	}
+	for(int j=-2;j<MAXY*3;j++)cout<<'-';
+	cout<<endl;
 }
 
-void sweep_mine(int y,int x)
+void sweep_mine(int x,int y)
 {
-	if(mysight[y][x])return;
-	if(myflag[y][x])return;
-	the_rest_of_square--;
-	mysight[y][x]=true;
-	if(mymap[y][x])return;
-	for(int i=y-1;i<y+2;i++)
-	    for(int j=x-1;j<x+2;j++)
-	        if(i>=0&&j>=0&&i<MAXY&&j<MAXX)
-	            sweep_mine(i,j);
+	if(myflag[x][y])return;
+	bool flag=true;
+	if(mysight[x][y])
+	{
+		for(int i=x-1;i<x+2;i++)
+		{
+			for(int j=y-1;j<y+2;j++)
+			{
+				if(i>=0&&j>=0&&i<MAXX&&j<MAXY&&mymine[i][j]&&!myflag[i][j])
+				{
+					flag=false;
+					break;
+				}
+			}
+			if(flag==false)break;
+		}
+	}
+	else
+	{
+		the_rest_of_square--;
+		mysight[x][y]=true;
+		if(mymap[x][y])flag=false;
+	}
+	if(flag)
+	  for(int i=x-1;i<x+2;i++)
+		for(int j=y-1;j<y+2;j++)
+		  if(i>=0&&j>=0&&i<MAXX&&j<MAXY&&!mysight[i][j])
+			sweep_mine(i,j);
 }
 
 bool get_input()
@@ -87,37 +107,40 @@ bool get_input()
 		switch (c_input)
 		{
 			case 'w':
-			    if(nowy>0)nowy--;
-			    return true;
+				if(nowx>0)nowx--;
+				return true;
 			case 'a':
-			    if(nowx>0)nowx--;
-			    return true;
+				if(nowy>0)nowy--;
+				return true;
 			case 's':
-			    if(nowy<MAXY-1)nowy++;
-			    return true;
+				if(nowx<MAXX-1)nowx++;
+				return true;
 			case 'd':
-			    if(nowx<MAXX-1)nowx++;
-			    return true;
+				if(nowy<MAXY-1)nowy++;
+				return true;
 			case 'j':
-			    if(mysight[nowy][nowx])break;
-			    if(myflag[nowy][nowx]){myflag[nowy][nowx]=false;the_rest_of_mine++;the_rest_of_square++;}
-			    else {myflag[nowy][nowx]=true;the_rest_of_mine--;the_rest_of_square--;}
-			    return true;
-   		 case ' ':
-   		     if(myflag[nowy][nowx])break;
-		        sweep_mine(nowy,nowx);
-			    if(mymine[nowy][nowx])return false;
-			    return true;
+				if(mysight[nowx][nowy])break;
+				if(myflag[nowx][nowy]){myflag[nowx][nowy]=false;the_rest_of_mine++;the_rest_of_square++;}
+				else {myflag[nowx][nowy]=true;the_rest_of_mine--;the_rest_of_square--;}
+				return true;
+			case ' ':
+				if(myflag[nowx][nowy])break;
+				sweep_mine(nowx,nowy);
+				if(mymine[nowx][nowy])return false;
+				return true;
+			case 'q':
+				exit(0);
 		}
 	}
+	return false;//will never run
 }
 
 bool win_game()
 {
 	bool wingame=true;
-	for(int i=0;i<MAXY&&wingame;i++)
-	    for(int j=0;j<MAXX&&wingame;j++)
-	        if(!(mymine[i][j]||mysight[i][j]))wingame=false;
+	for(int i=0;i<MAXX&&wingame;i++)
+	  for(int j=0;j<MAXY&&wingame;j++)
+		if(!(mymine[i][j]||mysight[i][j]))wingame=false;
 	return wingame;
 }
 
@@ -141,22 +164,22 @@ void init()
 {
 	memset(mymine,false,sizeof(mymine));
 	memset(mysight,false,sizeof(mysight));
-//memset(mysight,true,sizeof(mysight));
+	//memset(mysight,true,sizeof(mysight));
 	memset(mymap,0,sizeof(mymap));
 	memset(myflag,false,sizeof(myflag));
-	int mine_x,mine_y;
+	int mine_y,mine_x;
 	for(int k=0;k<MINE_NUM;k++)
 	{
-		mine_x=rand()%MAXX;
 		mine_y=rand()%MAXY;
-		if(mymine[mine_y][mine_x])k--;
+		mine_x=rand()%MAXX;
+		if(mymine[mine_x][mine_y])k--;
 		else
 		{
-			mymine[mine_y][mine_x]=true;
-			for(int j=mine_y-1;j<mine_y+2;j++)
-			    for(int i=mine_x-1;i<mine_x+2;i++)
-			        if(i>=0&&j>=0&&i<MAXX&&j<MAXY)
-			            mymap[j][i]++;
+			mymine[mine_x][mine_y]=true;
+			for(int i=mine_x-1;i<mine_x+2;i++)
+			  for(int j=mine_y-1;j<mine_y+2;j++)
+				if(j>=0&&i>=0&&j<MAXY&&i<MAXX)
+				  mymap[i][j]++;
 		}
 	}
 }
@@ -180,5 +203,5 @@ int main()
 		init();
 		game_start();
 	}while(new_game_start());
-    return 0;
+	return 0;
 }
