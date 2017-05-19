@@ -1,9 +1,9 @@
 #include <cstdio>                                      /********************/
 #include <iostream>                                    /*   made by kkke   */
-#include <conio.h>                                     /********************/
 #include <time.h>
 #include <cstring>
 #include <cstdlib>
+#include "getch.h"
 
 #define MAXX 20
 #define MAXY 20
