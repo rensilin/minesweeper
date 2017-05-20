@@ -67,24 +67,23 @@ void print_map()
 	cout<<endl;
 }
 
-void sweep_mine(int x,int y)
+bool sweep_mine(int x,int y)
 {
-	if(myflag[x][y])return;
+	if(myflag[x][y])return true;
+	if(mymine[x][y])
+	{
+		mysight[x][y]=true;
+		return false;
+	}
 	bool flag=true;
 	if(mysight[x][y])
 	{
+		int cnt=0;
 		for(int i=x-1;i<x+2;i++)
-		{
-			for(int j=y-1;j<y+2;j++)
-			{
-				if(i>=0&&j>=0&&i<MAXX&&j<MAXY&&mymine[i][j]&&!myflag[i][j])
-				{
-					flag=false;
-					break;
-				}
-			}
-			if(flag==false)break;
-		}
+		  for(int j=y-1;j<y+2;j++)
+			if(i>=0&&j>=0&&i<MAXX&&j<MAXY&&myflag[i][j])
+			  cnt++;
+		if(cnt!=mymap[x][y])flag=false;
 	}
 	else
 	{
@@ -93,10 +92,15 @@ void sweep_mine(int x,int y)
 		if(mymap[x][y])flag=false;
 	}
 	if(flag)
+	{
 	  for(int i=x-1;i<x+2;i++)
 		for(int j=y-1;j<y+2;j++)
 		  if(i>=0&&j>=0&&i<MAXX&&j<MAXY&&!mysight[i][j])
-			sweep_mine(i,j);
+			if(!sweep_mine(i,j))
+			  flag=false;
+	  return flag;
+	}
+	return true;
 }
 
 bool get_input()
@@ -125,9 +129,7 @@ bool get_input()
 				return true;
 			case ' ':
 				if(myflag[nowx][nowy])break;
-				sweep_mine(nowx,nowy);
-				if(mymine[nowx][nowy])return false;
-				return true;
+				return sweep_mine(nowx,nowy);
 			case 'q':
 				exit(0);
 		}
