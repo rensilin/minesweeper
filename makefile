@@ -6,5 +6,7 @@ getch.o:getch.cpp getch.h
 	g++ -c -o $@ $<
 run:minesweeper
 	./minesweeper
+install:minesweeper
+	mv minesweeper /usr/bin
 clean:
 	rm *.o
