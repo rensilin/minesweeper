@@ -91,7 +91,7 @@ bool sweep_mine(int x,int y)
 			for(int i=mine_x-1;i<mine_x+2;i++)
 			  for(int j=mine_y-1;j<mine_y+2;j++)
 				if(j>=0&&i>=0&&j<MAXY&&i<MAXX)
-				  mymap[i][j]--;
+				  mymap[i][j]++;
 		}
 	}
 	else if(mymine[x][y])
