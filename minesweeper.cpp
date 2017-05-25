@@ -21,6 +21,7 @@ int nowy, nowx;
 int the_rest_of_mine=MINE_NUM;
 int the_rest_of_square=MAXY*MAXX;
 char c_input;
+bool firstMove;
 
 void print_map()
 {
@@ -51,13 +52,14 @@ void print_map()
 			case 1:		cout<<"    *  by  *";break;
 			case 2:		cout<<"    * kkke *";break;
 			case 3:		cout<<"    ********";break;
-			case 6:		cout<<"    up   :w";break;
-			case 7:		cout<<"    down :s";break;
-			case 8:		cout<<"    left :a";break;
-			case 9:		cout<<"    right:d";break;
-			case 10:	cout<<"    flag :j";break;
-			case 11:	cout<<"    sweep:space";break;
-			case 12:	cout<<"    quit :q";break;
+			case 5:		cout<<"    up     :w";break;
+			case 6:		cout<<"    down   :s";break;
+			case 7:		cout<<"    left   :a";break;
+			case 8:		cout<<"    right  :d";break;
+			case 9:		cout<<"    flag   :j";break;
+			case 10:	cout<<"    sweep  :space";break;
+			case 11:	cout<<"    restart:r";break;
+			case 12:	cout<<"    quit   :q";break;
 			case 15:	cout<<"  rest square:"<<the_rest_of_square;break;
 			case 16:	cout<<"  rest mine  :"<<the_rest_of_mine;break;
 		}
@@ -70,7 +72,29 @@ void print_map()
 bool sweep_mine(int x,int y)
 {
 	if(myflag[x][y])return true;
-	if(mymine[x][y])
+	if(firstMove)
+	{
+		firstMove=false;
+		if(mymine[x][y])
+		{
+			for(int i=x-1;i<x+2;i++)
+			  for(int j=y-1;j<y+2;j++)
+				if(j>=0&&i>=0&&j<MAXY&&i<MAXX)
+				  mymap[i][j]--;
+			int mine_y,mine_x;
+			do{
+				mine_x=rand()%MAXX;
+				mine_y=rand()%MAXY;
+			}while(mymine[mine_x][mine_y]);
+			mymine[x][y]=false;
+			mymine[mine_x][mine_y]=true;
+			for(int i=mine_x-1;i<mine_x+2;i++)
+			  for(int j=mine_y-1;j<mine_y+2;j++)
+				if(j>=0&&i>=0&&j<MAXY&&i<MAXX)
+				  mymap[i][j]--;
+		}
+	}
+	else if(mymine[x][y])
 	{
 		mysight[x][y]=true;
 		return false;
@@ -93,14 +117,41 @@ bool sweep_mine(int x,int y)
 	}
 	if(flag)
 	{
-	  for(int i=x-1;i<x+2;i++)
-		for(int j=y-1;j<y+2;j++)
-		  if(i>=0&&j>=0&&i<MAXX&&j<MAXY&&!mysight[i][j])
-			if(!sweep_mine(i,j))
-			  flag=false;
-	  return flag;
+		for(int i=x-1;i<x+2;i++)
+		  for(int j=y-1;j<y+2;j++)
+			if(i>=0&&j>=0&&i<MAXX&&j<MAXY&&!mysight[i][j])
+			  if(!sweep_mine(i,j))
+				flag=false;
+		return flag;
 	}
 	return true;
+}
+
+void init()
+{
+	firstMove=true;
+	memset(mymine,false,sizeof(mymine));
+	memset(mysight,false,sizeof(mysight));
+	//memset(mysight,true,sizeof(mysight));
+	memset(mymap,0,sizeof(mymap));
+	memset(myflag,false,sizeof(myflag));
+	int mine_y,mine_x;
+	for(int k=0;k<MINE_NUM;k++)
+	{
+		mine_y=rand()%MAXY;
+		mine_x=rand()%MAXX;
+		if(mymine[mine_x][mine_y])k--;
+		else
+		{
+			mymine[mine_x][mine_y]=true;
+			for(int i=mine_x-1;i<mine_x+2;i++)
+			  for(int j=mine_y-1;j<mine_y+2;j++)
+				if(j>=0&&i>=0&&j<MAXY&&i<MAXX)
+				  mymap[i][j]++;
+		}
+	}
+	the_rest_of_mine=MINE_NUM;
+	the_rest_of_square=MAXY*MAXX;
 }
 
 bool get_input()
@@ -130,6 +181,9 @@ bool get_input()
 			case ' ':
 				if(myflag[nowx][nowy])break;
 				return sweep_mine(nowx,nowy);
+			case 'r':
+				init();
+				return true;
 			case 'q':
 				exit(0);
 		}
@@ -160,32 +214,6 @@ void game_start()
 	system("clear");
 	print_map();
 	cout<<"you lose!"<<endl;
-}
-
-void init()
-{
-	memset(mymine,false,sizeof(mymine));
-	memset(mysight,false,sizeof(mysight));
-	//memset(mysight,true,sizeof(mysight));
-	memset(mymap,0,sizeof(mymap));
-	memset(myflag,false,sizeof(myflag));
-	int mine_y,mine_x;
-	for(int k=0;k<MINE_NUM;k++)
-	{
-		mine_y=rand()%MAXY;
-		mine_x=rand()%MAXX;
-		if(mymine[mine_x][mine_y])k--;
-		else
-		{
-			mymine[mine_x][mine_y]=true;
-			for(int i=mine_x-1;i<mine_x+2;i++)
-			  for(int j=mine_y-1;j<mine_y+2;j++)
-				if(j>=0&&i>=0&&j<MAXY&&i<MAXX)
-				  mymap[i][j]++;
-		}
-	}
-	the_rest_of_mine=MINE_NUM;
-	the_rest_of_square=MAXY*MAXX;
 }
 
 bool new_game_start()
