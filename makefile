@@ -1,9 +1,11 @@
+CC=g++
+CPPFLAGS=-std=c++11
 minesweeper:minesweeper.o getch.o
-	g++ -o $@ $^
+	${CC} ${CPPFLAGS} -o $@ $^
 minesweeper.o:minesweeper.cpp SColor/SColor.h
-	g++ -c -o $@ $<
+	${CC} ${CPPFLAGS} -c -o $@ $<
 getch.o:getch.cpp getch.h
-	g++ -c -o $@ $<
+	${CC} ${CPPFLAGS} -c -o $@ $<
 
 SColor/SColor.h:
 	git submodule init
