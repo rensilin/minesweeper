@@ -1,6 +1,6 @@
-minesweeper:minesweeper.o getch.o SColor/SColor.h
+minesweeper:minesweeper.o getch.o
 	g++ -o $@ $^
-minesweeper.o:minesweeper.cpp
+minesweeper.o:minesweeper.cpp SColor/SColor.h
 	g++ -c -o $@ $<
 getch.o:getch.cpp getch.h
 	g++ -c -o $@ $<
