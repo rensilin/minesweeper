@@ -236,8 +236,8 @@ void game_start()
 		SColor::clean();
 		if(win_game())
 		{
-			cout<<"you win!"<<endl;
 			print_map(1);
+			cout<<"you win!"<<endl;
 			return;
 		}
 		print_map();
