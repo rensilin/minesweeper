@@ -6,10 +6,11 @@
 #include <cmath>
 #include "getch.h"
 #include <stdlib.h>
+#include "SColor/SColor.h"
 
 #define MAXY 20
 #define MAXX 20
-#define MINE_NUM 40
+#define MINE_NUM 60
 
 using namespace std;
 
@@ -24,6 +25,25 @@ int the_rest_of_mine=MINE_NUM;
 int the_rest_of_square=MAXY*MAXX;
 char c_input;
 bool firstMove;
+SColor defaultColor;
+SColor color[]={
+	SColor(),
+	SColor::BLUE,//1
+	SColor::GREEN,//2
+	SColor::RED,//3
+	SColor(),//4
+	SColor::YELLOW,//5
+	SColor::CYAN,//6
+	SColor::PURPLE,//7
+	SColor(SColor::BLACK,SColor::YELLOW)//8
+};
+
+void quit()
+{
+	SColor::echoCursor();
+	cout<<defaultColor;
+	exit(0);
+}
 
 void print_map(int finished=0)
 {
@@ -34,6 +54,13 @@ void print_map(int finished=0)
 		cout<<'|';
 		for(int j=0;j<MAXY;j++)
 		{
+			if(finished==-1)
+			{
+				if(myflag[i][j]&&!mymine[i][j])cout<<SColor(SColor::BLACK,SColor::RED);
+			}
+			if(mymine[i][j]&&mysight[i][j])cout<<SColor(SColor::BLACK,SColor::RED,SColor::HIGHLIGHT);
+			if(mysight[i][j]&&!mymine[i][j])cout<<color[mymap[i][j]];
+			if(finished==0&&myflag[i][j])cout<<SColor().setFg(SColor::CYAN)+SColor::HIGHLIGHT+SColor::ITALIC;
 			if((i==nowx)&&(j==nowy))cout<<'[';
 			else cout<<' ';
 			if(myflag[i][j])cout<<'@';
@@ -46,6 +73,7 @@ void print_map(int finished=0)
 			else cout<<'.';
 			if((i==nowx)&&(j==nowy))cout<<']';
 			else cout<<' ';
+			cout<<defaultColor;
 		}
 		cout<<'|';
 		switch (i)
@@ -187,7 +215,7 @@ bool get_input()
 			init();
 			return true;
 		case 'q':
-			exit(0);
+			quit();
 		}
 	}
 	return false;//will never run
@@ -205,7 +233,7 @@ bool win_game()
 void game_start()
 {
 	do{
-		system("clear");
+		SColor::clean();
 		if(win_game())
 		{
 			cout<<"you win!"<<endl;
@@ -214,7 +242,7 @@ void game_start()
 		}
 		print_map();
 	}while(get_input());
-	system("clear");
+	SColor::clean();
 	print_map(-1);
 	cout<<"you lose!"<<endl;
 }
@@ -229,6 +257,8 @@ bool new_game_start()
 void real_init()
 {
 	srand(time(NULL));
+	SColor::hideCursor();
+	for(auto &i:color)i|=SColor::HIGHLIGHT;
 }
 
 int main()
@@ -238,5 +268,6 @@ int main()
 		init();
 		game_start();
 	}while(new_game_start());
+	quit();
 	return 0;
 }
