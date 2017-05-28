@@ -6,3 +6,11 @@
 	cd minesweeper
 	make
 	sudo make install
+
+## unstall
+	
+	sudo make uninstall
+
+or
+
+	sudo rm /usr/bin/minesweeper
