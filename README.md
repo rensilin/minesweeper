@@ -7,7 +7,7 @@
 	make
 	sudo make install
 
-## unstall
+## uninstall
 	
 	sudo make uninstall
 
