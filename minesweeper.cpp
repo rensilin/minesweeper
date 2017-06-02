@@ -47,10 +47,12 @@ void quit()
 
 void print_map(int finished=0)
 {
+	SColor::setCursor(0,0);
 	for(int i=-2;i<MAXY*3;i++)cout<<'-';
 	cout<<endl;
 	for(int i=0;i<MAXX;i++)
 	{
+		SColor::cleanLine();
 		cout<<'|';
 		for(int j=0;j<MAXY;j++)
 		{
@@ -233,7 +235,6 @@ bool win_game()
 void game_start()
 {
 	do{
-		SColor::clean();
 		if(win_game())
 		{
 			print_map(1);
@@ -242,7 +243,6 @@ void game_start()
 		}
 		print_map();
 	}while(get_input());
-	SColor::clean();
 	print_map(-1);
 	cout<<"you lose!"<<endl;
 }
@@ -265,6 +265,7 @@ int main()
 {
 	real_init();
 	do{
+		SColor::clean();
 		init();
 		game_start();
 	}while(new_game_start());
