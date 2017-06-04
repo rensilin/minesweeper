@@ -1,12 +1,13 @@
 #include <cstdio>                                      /********************/
 #include <iostream>                                    /*   made by kkke   */
-#include <time.h>                                      /********************/
+#include <ctime>                                      /********************/
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
-#include "getch.h"
 #include <stdlib.h>
+#include "getch.h"
 #include "SColor/SColor.h"
+#include "args/args.hxx"
 
 #define MAXY 100
 #define MAXX 100
@@ -296,8 +297,93 @@ void realInit()
 	for(auto &i:nColor)i|=SColor::HIGHLIGHT;
 }
 
-int main(int argc,char* argv[])
+void argsParse(int argc,char **argv)
 {
+	vector<int>easyV={9,9,10};
+	vector<int>normalV={16,16,30};
+	vector<int>hardV={20,20,60};
+	args::ArgumentParser parser(string("minesweeper ")+version);
+	args::HelpFlag help(parser,"help","Show this help menu.",{'h',"help"});
+	args::Flag fVersion(parser,"version","Show version",{'v',"version"});
+	args::Flag easy(parser,"easy",
+					"Choose easy("
+					+to_string(easyV[0])
+					+"*"+to_string(easyV[1])
+					+"("+to_string(easyV[2])+"))"
+					,{'1',"easy"});
+	args::Flag normal(parser,"normal",
+					  "Choose normal("
+					  +to_string(normalV[0])
+					  +"*"+to_string(normalV[1])
+					  +"("+to_string(normalV[2])+"))"
+					  ,{'2',"normal"});
+	args::Flag hard(parser,"hard",
+					"Choose hard("
+					+to_string(hardV[0])
+					+"*"+to_string(hardV[1])
+					+"("+to_string(hardV[2])+"))"
+					,{'3',"hard"});
+	args::ValueFlagList<int> size(parser,"x y m","Set map size x*y(m)",{'s',"size"});
+	try{
+		parser.ParseCLI(argc,argv);
+	}
+	catch(args::Help e)
+	{
+		cout<<parser;
+		exit(0);
+	}
+	catch(args::ParseError e)
+	{
+		cerr<<e.what()<<endl;
+		cerr<<parser;
+		exit(1);
+	}
+	catch(args::ValidationError e)
+	{
+		cerr<<e.what()<<endl;
+		cerr<<parser;
+		exit(1);
+	}
+	if(fVersion)
+	{
+		cout<<version<<endl;
+		exit(0);
+	}
+	if(size)
+	{
+		const auto &list=args::get(size);
+		if(list.size()!=3)
+		{
+			cerr<<"please use --size as --size a b c"<<endl;
+			exit(1);
+		}
+		maxx=max(1,min(MAXX,list[0]));
+		maxy=max(1,min(MAXY,list[1]));
+		mineNum=max(0,min(maxx*maxy,list[2]));
+	}
+	else if(easy)
+	{
+		maxx=easyV[0];
+		maxy=easyV[1];
+		mineNum=easyV[2];
+	}
+	else if(normal)
+	{
+		maxx=normalV[0];
+		maxy=normalV[1];
+		mineNum=normalV[2];
+	}
+	else if(hard)
+	{
+		maxx=hardV[0];
+		maxy=hardV[1];
+		mineNum=hardV[2];
+	}
+}
+
+int main(int argc,char** argv)
+{
+	argsParse(argc,argv);
 	realInit();
 	do{
 		SColor::clean();
