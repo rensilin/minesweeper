@@ -56,7 +56,9 @@ void quit()
 
 void printMap(int finished=0)
 {
-	SColor::setCursor(0,0);
+	SColor::setCursor(17,3*maxy+2);	cout<<"  rest square:"<<theRestOfSquare;SColor::cleanLine();
+	SColor::setCursor(16,3*maxy+2);	cout<<"  rest mine  :"<<theRestOfMine;SColor::cleanLine();
+	SColor::setCursor(1,1);
 	for(int i=-2;i<maxy*3;i++)cout<<'-';
 	cout<<endl;
 	for(int i=0;i<maxx;i++)
@@ -103,24 +105,6 @@ void printMap(int finished=0)
 			cout<<defaultColor;
 		}
 		cout<<'|';
-		switch (i)
-		{
-		case 0:		cout<<"    ***************";break;
-		case 1:		cout<<"    * minesweeper *";break;
-		case 2:		cout<<"    *     "<<version<<"    *";break;
-		case 3:		cout<<"    ***************";break;
-		case 5:		cout<<"    up     :w";break;
-		case 6:		cout<<"    down   :s";break;
-		case 7:		cout<<"    left   :a";break;
-		case 8:		cout<<"    right  :d";break;
-		case 9:		cout<<"    flag   :j";break;
-		case 10:	cout<<"    sweep  :space";break;
-		case 11:	cout<<"    restart:r";break;
-		case 12:	cout<<"    quit   :q";break;
-		case 15:	cout<<"  rest square:"<<theRestOfSquare;break;
-		case 16:	cout<<"  rest mine  :"<<theRestOfMine;break;
-		}
-		SColor::cleanLine();
 		cout<<endl;
 	}
 	for(int j=-2;j<maxy*3;j++)cout<<'-';
@@ -218,6 +202,19 @@ void init()
 	}
 	theRestOfMine=mineNum;
 	theRestOfSquare=maxy*maxx;
+	cout<<"loading...";
+	SColor::setCursor(2,3*maxy+2);		cout<<"    ***************";
+	SColor::setCursor(3,3*maxy+2);		cout<<"    * minesweeper *";
+	SColor::setCursor(4,3*maxy+2);		cout<<"    *     "<<version<<"    *";
+	SColor::setCursor(5,3*maxy+2);		cout<<"    ***************";
+	SColor::setCursor(7,3*maxy+2);		cout<<"    up     :w";
+	SColor::setCursor(8,3*maxy+2);		cout<<"    down   :s";
+	SColor::setCursor(9,3*maxy+2);		cout<<"    left   :a";
+	SColor::setCursor(10,3*maxy+2);		cout<<"    right  :d";
+	SColor::setCursor(11,3*maxy+2);		cout<<"    flag   :j";
+	SColor::setCursor(12,3*maxy+2);		cout<<"    sweep  :space";
+	SColor::setCursor(13,3*maxy+2);		cout<<"    restart:r";
+	SColor::setCursor(14,3*maxy+2);		cout<<"    quit   :q";
 }
 
 bool getInput()
