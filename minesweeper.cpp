@@ -34,6 +34,7 @@ int theRestOfSquare=maxy*maxx;
 char cInput;
 bool firstMove;
 SColor defaultColor;
+int lastLine;
 
 SColor nColor[]={
 	SColor(),
@@ -51,13 +52,15 @@ void quit()
 {
 	SColor::echoCursor();
 	cout<<defaultColor;
+	SColor::setCursor(lastLine,1);
+	cout<<endl;
 	exit(0);
 }
 
 void printMap(int finished=0)
 {
 	SColor::setCursor(17,3*maxy+2);	cout<<"  rest square:"<<theRestOfSquare;SColor::cleanLine();
-	SColor::setCursor(16,3*maxy+2);	cout<<"  rest mine  :"<<theRestOfMine;SColor::cleanLine();
+	SColor::setCursor(18,3*maxy+2);	cout<<"  rest mine  :"<<theRestOfMine;SColor::cleanLine();
 	SColor::setCursor(1,1);
 	for(int i=-2;i<maxy*3;i++)cout<<'-';
 	cout<<endl;
@@ -178,6 +181,7 @@ bool sweepMine(int x,int y)
 
 void init()
 {
+	lastLine=max(maxx+2,18);
 	firstMove=true;
 	memset(mMine,false,sizeof(mMine));
 	memset(mSight,false,sizeof(mSight));
@@ -281,6 +285,7 @@ void gameStart()
 bool newGameStart()
 {
 	cout<<"press y to start a new game"<<endl;
+	lastLine=max(maxx+4,18);
 	char c;
 	while((c=getch())!='y'&&c!='q');
 	if(c=='q')return false;
@@ -354,9 +359,9 @@ void argsParse(int argc,char **argv)
 			cerr<<"please use --size as --size a b c"<<endl;
 			exit(1);
 		}
-		maxx=max(1,min(MAXX,list[0]));
-		maxy=max(1,min(MAXY,list[1]));
-		mineNum=max(0,min(maxx*maxy,list[2]));
+		maxx=max(9,min(MAXX,list[0]));
+		maxy=max(9,min(MAXY,list[1]));
+		mineNum=max(1,min(maxx*maxy,list[2]));
 	}
 	else if(easy)
 	{
