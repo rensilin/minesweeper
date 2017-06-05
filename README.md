@@ -6,6 +6,7 @@
 	cd minesweeper
 	make
 	sudo make install
+	. ~/.bashrc
 
 ## uninstall
 	
