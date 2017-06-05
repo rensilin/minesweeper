@@ -16,15 +16,21 @@ using namespace std;
 
 const string version="v1.4";
 
+const int easyV[3]={9,9,10};
+const int normalV[3]={16,16,30};
+const int hardV[3]={20,20,60};
+int difficultyV[3];
+const int *difficulty;
+
 int mMap[MAXX][MAXY];
 bool mMine[MAXX][MAXY];
 bool mSight[MAXX][MAXY];
 bool mFlag[MAXX][MAXY];
 bool mHighlight[MAXX][MAXY];
 
-int maxy=20;
-int maxx=20;
-int mineNum=60;
+int &maxy=difficultyV[0];
+int &maxx=difficultyV[1];
+int &mineNum=difficultyV[2];
 
 int nowy, nowx;
 
@@ -301,9 +307,6 @@ void realInit()
 
 void argsParse(int argc,char **argv)
 {
-	vector<int>easyV={9,9,10};
-	vector<int>normalV={16,16,30};
-	vector<int>hardV={20,20,60};
 	args::ArgumentParser parser(string("minesweeper ")+version);
 	args::HelpFlag help(parser,"help","Show this help menu.",{'h',"help"});
 	args::Flag fVersion(parser,"version","Show version",{'v',"version"});
@@ -312,20 +315,22 @@ void argsParse(int argc,char **argv)
 					+to_string(easyV[0])
 					+"*"+to_string(easyV[1])
 					+"("+to_string(easyV[2])+"))"
-					,{'1',"easy"});
+					,{'1','E',"easy"});
 	args::Flag normal(parser,"normal",
 					  "Choose normal("
 					  +to_string(normalV[0])
 					  +"*"+to_string(normalV[1])
 					  +"("+to_string(normalV[2])+"))"
-					  ,{'2',"normal"});
+					  ,{'2','N',"normal"});
 	args::Flag hard(parser,"hard",
 					"Choose hard("
 					+to_string(hardV[0])
 					+"*"+to_string(hardV[1])
 					+"("+to_string(hardV[2])+"))"
-					,{'3',"hard"});
-	args::ValueFlagList<int> size(parser,"x y m","Set map size x*y(m)",{'s',"size"});
+					,{'3','H',"hard"});
+	args::Positional<int> height(parser,"height","set height");
+	args::Positional<int> weight(parser,"weight","set weight");
+	args::Positional<int> acountOfMine(parser,"acount of mine","set acount of mine");
 	try{
 		parser.ParseCLI(argc,argv);
 	}
@@ -351,36 +356,20 @@ void argsParse(int argc,char **argv)
 		cout<<version<<endl;
 		exit(0);
 	}
-	if(size)
+	if(easy)difficulty=easyV;
+	else if(normal)difficulty=normalV;
+	else if(hard)difficulty=hardV;
+	else if(height)
 	{
-		const auto &list=args::get(size);
-		if(list.size()!=3)
-		{
-			cerr<<"please use --size as --size a b c"<<endl;
-			exit(1);
-		}
-		maxx=max(9,min(MAXX,list[0]));
-		maxy=max(9,min(MAXY,list[1]));
-		mineNum=max(1,min(maxx*maxy,list[2]));
+		maxx=max(9,min(100,args::get(height)));
+		if(weight)maxy=max(9,min(100,args::get(weight)));
+		else maxy=9;
+		if(acountOfMine)mineNum=max(1,min(maxx*maxy,args::get(acountOfMine)));
+		else mineNum=sqrt(maxx*maxy);
+		difficulty=difficultyV;
 	}
-	else if(easy)
-	{
-		maxx=easyV[0];
-		maxy=easyV[1];
-		mineNum=easyV[2];
-	}
-	else if(normal)
-	{
-		maxx=normalV[0];
-		maxy=normalV[1];
-		mineNum=normalV[2];
-	}
-	else if(hard)
-	{
-		maxx=hardV[0];
-		maxy=hardV[1];
-		mineNum=hardV[2];
-	}
+	else difficulty=normalV;
+	if(difficultyV!=difficulty)memcpy(difficultyV,difficulty,sizeof(int)*3);
 }
 
 int main(int argc,char** argv)
