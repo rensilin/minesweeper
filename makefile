@@ -9,11 +9,11 @@ getch.o:getch.cpp getch.h
 run:minesweeper
 	./minesweeper
 install:minesweeper
-	cp completion.sh /usr/share/bash-completion/completions/minesweeper
-	. ~/.bashrc
 	mv minesweeper /usr/bin
 uninstall:
 	rm /usr/share/bash-completion/completions/minesweeper
 	rm /usr/bin/minesweeper
 clean:
 	rm *.o
+completion:
+	cp completion.sh /usr/share/bash-completion/completions/minesweeper

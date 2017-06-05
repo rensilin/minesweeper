@@ -8,6 +8,10 @@
 	sudo make install
 	. ~/.bashrc
 
+##completion      //test
+
+	sudo make completion
+
 ## uninstall
 	
 	sudo make uninstall
