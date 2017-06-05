@@ -10,7 +10,7 @@ run:minesweeper
 	./minesweeper
 install:minesweeper
 	cp completion.sh /usr/share/bash-completion/completions/minesweeper
-	. ./completion.sh
+	. ~/.bashrc
 	mv minesweeper /usr/bin
 uninstall:
 	rm /usr/share/bash-completion/completions/minesweeper
