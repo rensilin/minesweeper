@@ -1,3 +1,6 @@
 [submodule "SColor"]
 	path = SColor
 	url = https://github.com/kkkeQAQ/SColor
+[submodule "args"]
+	path = args
+	url = https://github.com/Taywee/args
