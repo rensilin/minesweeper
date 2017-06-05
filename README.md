@@ -6,7 +6,6 @@
 	cd minesweeper
 	make
 	sudo make install
-	. ~/.bashrc
 
 ##completion      //test
 
