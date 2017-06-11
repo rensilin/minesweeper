@@ -5,7 +5,9 @@
 #include <cstdlib>
 #include <cmath>
 #include <stdlib.h>
-#include "getch.h"
+#include <termios.h>
+#include <unistd.h>
+#include <assert.h>
 #include "SColor/SColor.h"
 #include "args/args.hxx"
 
@@ -15,6 +17,8 @@
 using namespace std;
 
 const string version="v1.4";
+
+struct termios org_opts;
 
 const int easyV[3]={9,9,10};
 const int normalV[3]={16,16,30};
@@ -60,6 +64,9 @@ void quit()
 	cout<<defaultColor;
 	SColor::setCursor(lastLine,1);
 	cout<<endl;
+	//------  restore old settings ---------
+	int res;
+	res=tcsetattr(STDIN_FILENO, TCSANOW, &org_opts);assert(res==0);
 	exit(0);
 }
 
@@ -231,7 +238,7 @@ bool getInput()
 {
 	while(1)
 	{
-		cInput=getch();
+		cInput=getchar();
 		switch (cInput)
 		{
 		case 'w':
@@ -293,13 +300,23 @@ bool newGameStart()
 	cout<<"press y to start a new game"<<endl;
 	lastLine=max(maxx+4,18);
 	char c;
-	while((c=getch())!='y'&&c!='q');
+	while((c=getchar())!='y'&&c!='q');
 	if(c=='q')return false;
 	return true;
 }
 
 void realInit()
 {
+	struct termios new_opts;
+	int res=0;
+	//-----  store old settings -----------
+	res=tcgetattr(STDIN_FILENO, &org_opts);
+	assert(res==0);
+	//---- set new terminal parms --------
+	memcpy(&new_opts, &org_opts, sizeof(new_opts));
+	new_opts.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ECHOPRT | ECHOKE | ICRNL);
+	tcsetattr(STDIN_FILENO, TCSANOW, &new_opts);
+
 	srand(time(NULL));
 	SColor::hideCursor();
 	for(auto &i:nColor)i|=SColor::HIGHLIGHT;
