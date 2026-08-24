@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 #include <assert.h>
@@ -45,7 +46,13 @@ const int easyV[3]={9,9,10};
 const int normalV[3]={16,16,30};
 const int hardV[3]={20,20,60};
 int difficultyV[3];
+int requestedDifficultyV[3];
 const int *difficulty;
+
+const int panelWidth=18;
+const int reservedTerminalRows=5;
+const int minTerminalRows=19;
+const int minTerminalColumns=47;
 
 int mMap[MAXX][MAXY];
 bool mMine[MAXX][MAXY];
@@ -70,6 +77,10 @@ int gameResult;
 volatile sig_atomic_t terminalResized;
 bool colorEnabled;
 bool unicodeEnabled;
+bool boardSizeLimited;
+bool terminalTooSmall;
+int terminalRows;
+int terminalColumns;
 
 enum CellStyle
 {
@@ -138,11 +149,47 @@ void detectTerminalCapabilities()
 	colorEnabled=capableTerm&&isatty(STDOUT_FILENO)&&getenv("NO_COLOR")==NULL;
 }
 
+bool fitBoardToTerminal()
+{
+	struct winsize terminalSize;
+	memset(&terminalSize,0,sizeof(terminalSize));
+	bool sizeAvailable=ioctl(STDOUT_FILENO,TIOCGWINSZ,&terminalSize)==0
+		&&terminalSize.ws_row>0&&terminalSize.ws_col>0;
+	terminalRows=sizeAvailable?terminalSize.ws_row:0;
+	terminalColumns=sizeAvailable?terminalSize.ws_col:0;
+	terminalTooSmall=sizeAvailable
+		&&(terminalRows<minTerminalRows||terminalColumns<minTerminalColumns);
+	if(terminalTooSmall)return false;
+
+	int targetWidth=requestedDifficultyV[0];
+	int targetHeight=requestedDifficultyV[1];
+	if(sizeAvailable)
+	{
+		int supportedWidth=(terminalColumns-panelWidth-2)/3;
+		int supportedHeight=terminalRows-reservedTerminalRows;
+		targetWidth=min(targetWidth,supportedWidth);
+		targetHeight=min(targetHeight,supportedHeight);
+	}
+	int targetArea=targetWidth*targetHeight;
+	int targetMineNum=min(requestedDifficultyV[2],targetArea>1?targetArea-1:0);
+	bool boardChanged=difficultyV[0]!=targetWidth
+		||difficultyV[1]!=targetHeight
+		||difficultyV[2]!=targetMineNum;
+	difficultyV[0]=targetWidth;
+	difficultyV[1]=targetHeight;
+	difficultyV[2]=targetMineNum;
+	nowy=min(nowy,targetWidth-1);
+	nowx=min(nowx,targetHeight-1);
+	boardSizeLimited=targetWidth!=requestedDifficultyV[0]
+		||targetHeight!=requestedDifficultyV[1];
+	return boardChanged;
+}
+
 void quit()
 {
 	SColor::echoCursor();
 	endColor();
-	SColor::setCursor(lastLine,1);
+	SColor::setCursor(terminalTooSmall&&terminalRows?terminalRows:lastLine,1);
 	cout<<endl;
 	//------  restore old settings ---------
 	int res;
@@ -236,6 +283,7 @@ void refreshStatus()
 
 void refreshMap(int finished=0)
 {
+	if(terminalTooSmall)return;
 	for(int i=0;i<maxx;i++)
 		for(int j=0;j<maxy;j++)
 		{
@@ -317,6 +365,16 @@ void drawLayout()
 	beginColor(borderColor);
 	cout<<(unicodeEnabled?"╰─────────────╯":"+-------------+");
 	endColor();
+	if(boardSizeLimited)
+	{
+		SColor::setCursor(6,3*maxy+3);
+		cout<<"   ";
+		beginColor(failureColor);
+		cout<<"warning ";
+		beginColor(titleColor);
+		cout<<maxx<<'x'<<maxy;
+		endColor();
+	}
 	drawControl(7,"up","w");
 	drawControl(8,"down","s");
 	drawControl(9,"left","a");
@@ -330,6 +388,7 @@ void drawLayout()
 
 void clearMessages()
 {
+	if(terminalTooSmall)return;
 	string blank(3*maxy+2,' ');
 	SColor::setCursor(maxx+3,1);
 	cout<<blank;
@@ -346,6 +405,7 @@ void invalidateRenderedState()
 
 void showGameResult(int finished)
 {
+	if(terminalTooSmall)return;
 	SColor::setCursor(maxx+3,1);
 	beginColor(finished==1?successColor:failureColor);
 	cout<<(finished==1?"you win! ":"you lose!");
@@ -355,6 +415,7 @@ void showGameResult(int finished)
 
 void showNewGamePrompt()
 {
+	if(terminalTooSmall)return;
 	SColor::setCursor(maxx+4,1);
 	beginColor(labelColor);
 	cout<<"new game ";
@@ -368,11 +429,28 @@ void showNewGamePrompt()
 	cout.flush();
 }
 
+void drawTerminalWarning()
+{
+	string message="warning: terminal too small; need 47x19";
+	if(terminalColumns>0&&message.size()>static_cast<size_t>(terminalColumns))
+		message.resize(terminalColumns);
+	SColor::setCursor(1,1);
+	beginColor(failureColor);
+	cout<<message;
+	endColor();
+	cout.flush();
+}
+
 void redrawScreen(int finished=0,bool showPrompt=false)
 {
 	terminalResized=0;
 	SColor::clean();
 	invalidateRenderedState();
+	if(terminalTooSmall)
+	{
+		drawTerminalWarning();
+		return;
+	}
 	drawLayout();
 	refreshMap(finished);
 	if(finished)showGameResult(finished);
@@ -485,6 +563,7 @@ bool getInput()
 	{
 		if(terminalResized)
 		{
+			if(fitBoardToTerminal())init();
 			redrawScreen();
 			continue;
 		}
@@ -498,6 +577,11 @@ bool getInput()
 				continue;
 			}
 			quit();
+		}
+		if(terminalTooSmall)
+		{
+			if(cInput=='q')quit();
+			continue;
 		}
 		switch (cInput)
 		{
@@ -522,6 +606,7 @@ bool getInput()
 			if(mFlag[nowx][nowy])break;
 			return sweepMine(nowx,nowy);
 		case 'r':
+			fitBoardToTerminal();
 			init();
 			return true;
 		case 'q':
@@ -569,7 +654,12 @@ bool newGameStart()
 	{
 		if(terminalResized)
 		{
-			redrawScreen(gameResult,true);
+			if(fitBoardToTerminal())
+			{
+				init();
+				redrawScreen(0,true);
+			}
+			else redrawScreen(gameResult,true);
 			continue;
 		}
 		errno=0;
@@ -582,6 +672,11 @@ bool newGameStart()
 				continue;
 			}
 			return false;
+		}
+		if(terminalTooSmall)
+		{
+			if(input=='q')return false;
+			continue;
 		}
 		if(input=='y')return true;
 		if(input=='q')return false;
@@ -676,18 +771,21 @@ void argsParse(int argc,char **argv)
 	}
 	else difficulty=normalV;
 	if(difficultyV!=difficulty)memcpy(difficultyV,difficulty,sizeof(int)*3);
+	memcpy(requestedDifficultyV,difficultyV,sizeof(requestedDifficultyV));
 }
 
 int main(int argc,char** argv)
 {
 	argsParse(argc,argv);
 	realInit();
+	fitBoardToTerminal();
 	init();
 	redrawScreen();
 	do{
 		gameStart();
 		if(!newGameStart())break;
 		clearMessages();
+		fitBoardToTerminal();
 		init();
 	}while(1);
 	quit();
