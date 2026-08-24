@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
@@ -161,6 +162,29 @@ void detectTerminalCapabilities()
 	colorEnabled=capableTerm&&isatty(STDOUT_FILENO)&&getenv("NO_COLOR")==NULL;
 }
 
+bool readEnvironmentDimension(const char *name,int &value)
+{
+	const char *rawValue=getenv(name);
+	if(!rawValue||!*rawValue)return false;
+	errno=0;
+	char *end=NULL;
+	long parsedValue=strtol(rawValue,&end,10);
+	if(errno||*end!='\0'||parsedValue<=0
+		||parsedValue>numeric_limits<int>::max())return false;
+	value=static_cast<int>(parsedValue);
+	return true;
+}
+
+bool readTerminalSize(int descriptor,struct winsize &terminalSize)
+{
+	struct winsize candidate;
+	memset(&candidate,0,sizeof(candidate));
+	if(ioctl(descriptor,TIOCGWINSZ,&candidate)!=0
+		||candidate.ws_row==0||candidate.ws_col==0)return false;
+	terminalSize=candidate;
+	return true;
+}
+
 bool keepCursorVisible()
 {
 	int previousViewportX=viewportX;
@@ -183,16 +207,32 @@ void updateTerminalViewport()
 	panelWidth=max(minimumPanelWidth,max(sizeWidth,counterWidth));
 	struct winsize terminalSize;
 	memset(&terminalSize,0,sizeof(terminalSize));
-	bool sizeAvailable=ioctl(STDOUT_FILENO,TIOCGWINSZ,&terminalSize)==0
-		&&terminalSize.ws_row>0&&terminalSize.ws_col>0;
+	bool sizeAvailable=readTerminalSize(STDOUT_FILENO,terminalSize)
+		||readTerminalSize(STDIN_FILENO,terminalSize);
 	if(!sizeAvailable)
-		sizeAvailable=ioctl(STDIN_FILENO,TIOCGWINSZ,&terminalSize)==0
-			&&terminalSize.ws_row>0&&terminalSize.ws_col>0;
-	terminalRows=sizeAvailable?terminalSize.ws_row:0;
-	terminalColumns=sizeAvailable?terminalSize.ws_col:0;
+	{
+		int terminalDescriptor=open("/dev/tty",O_RDONLY);
+		if(terminalDescriptor>=0)
+		{
+			sizeAvailable=readTerminalSize(terminalDescriptor,terminalSize);
+			close(terminalDescriptor);
+		}
+	}
+	if(sizeAvailable)
+	{
+		terminalRows=terminalSize.ws_row;
+		terminalColumns=terminalSize.ws_col;
+	}
+	else
+	{
+		bool environmentSizeAvailable=readEnvironmentDimension("LINES",terminalRows)
+			&&readEnvironmentDimension("COLUMNS",terminalColumns);
+		sizeAvailable=environmentSizeAvailable;
+		if(!sizeAvailable)terminalRows=terminalColumns=0;
+	}
 	int requiredColumns=minBoardSize*3+2+panelWidth;
-	terminalTooSmall=sizeAvailable
-		&&(terminalRows<minTerminalRows||terminalColumns<requiredColumns);
+	terminalTooSmall=!sizeAvailable
+		||terminalRows<minTerminalRows||terminalColumns<requiredColumns;
 	if(terminalTooSmall)return;
 
 	visibleMaxx=maxx;
@@ -215,7 +255,8 @@ void restoreTerminal()
 {
 	SColor::echoCursor();
 	endColor();
-	SColor::setCursor(terminalTooSmall&&terminalRows?terminalRows:lastLine,1);
+	int exitRow=terminalTooSmall?max(1,terminalRows):max(1,lastLine);
+	SColor::setCursor(exitRow,1);
 	cout<<endl;
 	//------  restore old settings ---------
 	int res;
@@ -473,9 +514,15 @@ void showNewGamePrompt()
 
 void drawTerminalWarning()
 {
-	int requiredColumns=minBoardSize*3+2+panelWidth;
-	string message="warning: terminal too small; need "
-		+to_string(requiredColumns)+"x"+to_string(minTerminalRows);
+	string message;
+	if(terminalRows<=0||terminalColumns<=0)
+		message="warning: terminal size unavailable";
+	else
+	{
+		int requiredColumns=minBoardSize*3+2+panelWidth;
+		message="warning: terminal too small; need "
+			+to_string(requiredColumns)+"x"+to_string(minTerminalRows);
+	}
 	if(terminalColumns>0&&message.size()>static_cast<size_t>(terminalColumns))
 		message.resize(terminalColumns);
 	SColor::setCursor(1,1);
@@ -488,8 +535,8 @@ void drawTerminalWarning()
 void redrawScreen(int finished=0,bool showPrompt=false)
 {
 	terminalResized=0;
-	SColor::clean();
 	invalidateRenderedState();
+	SColor::clean();
 	if(terminalTooSmall)
 	{
 		drawTerminalWarning();
