@@ -5,7 +5,7 @@ _minesweeper_comp()
 	cur="${COMP_WORDS[COMP_CWORD]}"
 	prev="${COMP_WORDS[COMP_CWORD-1]}"
 	opt="h v E N H --"
-	opts="--help --version --easy --normal --hard"
+	opts="--help --version --easy --normal --hard --no-max-size"
 
 	if [[ ${cur} == - ]]; then
 		COMPREPLY=( $opt )

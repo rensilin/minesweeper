@@ -20,6 +20,8 @@
 #include <ctime>
 #include <cctype>
 #include <clocale>
+#include <exception>
+#include <limits>
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
@@ -30,6 +32,8 @@
 #include <termios.h>
 #include <unistd.h>
 #include <assert.h>
+#include <utility>
+#include <vector>
 #include "SColor/SColor.h"
 #include "args/args.hxx"
 
@@ -46,20 +50,18 @@ const int easyV[3]={9,9,10};
 const int normalV[3]={16,16,30};
 const int hardV[3]={20,20,60};
 int difficultyV[3];
-int requestedDifficultyV[3];
 const int *difficulty;
 
-const int panelWidth=18;
+const int minimumPanelWidth=18;
 const int reservedTerminalRows=5;
 const int minTerminalRows=19;
-const int minTerminalColumns=47;
 const int minBoardSize=9;
 
-int mMap[MAXX][MAXY];
-bool mMine[MAXX][MAXY];
-bool mSight[MAXX][MAXY];
-bool mFlag[MAXX][MAXY];
-bool mHighlight[MAXX][MAXY];
+vector<vector<int> > mMap;
+vector<vector<bool> > mMine;
+vector<vector<bool> > mSight;
+vector<vector<bool> > mFlag;
+vector<vector<bool> > mHighlight;
 
 int &maxy=difficultyV[0];
 int &maxx=difficultyV[1];
@@ -67,8 +69,10 @@ int &mineNum=difficultyV[2];
 
 int nowy, nowx;
 
-int theRestOfMine=mineNum;
-int theRestOfSquare=maxy*maxx;
+long long theRestOfMine=mineNum;
+long long theRestOfSquare=static_cast<long long>(maxy)*maxx;
+long long hiddenSafeSquares;
+vector<pair<int,int> > highlightedCells;
 
 int cInput;
 bool firstMove;
@@ -80,9 +84,15 @@ bool colorEnabled;
 bool unicodeEnabled;
 bool boardSizeLimited;
 bool boardSizeArgumentLimited;
+bool boardClipped;
 bool terminalTooSmall;
 int terminalRows;
 int terminalColumns;
+int visibleMaxx;
+int visibleMaxy;
+int viewportX;
+int viewportY;
+int panelWidth;
 
 enum CellStyle
 {
@@ -102,9 +112,9 @@ struct CellView
 	bool valid;
 };
 
-CellView mRendered[MAXX][MAXY];
-int renderedRestOfMine;
-int renderedRestOfSquare;
+vector<vector<CellView> > mRendered;
+long long renderedRestOfMine;
+long long renderedRestOfSquare;
 bool renderedStatusValid;
 
 SColor nColor[]={
@@ -151,44 +161,57 @@ void detectTerminalCapabilities()
 	colorEnabled=capableTerm&&isatty(STDOUT_FILENO)&&getenv("NO_COLOR")==NULL;
 }
 
-bool fitBoardToTerminal()
+bool keepCursorVisible()
 {
+	int previousViewportX=viewportX;
+	int previousViewportY=viewportY;
+	if(nowx<viewportX)viewportX=nowx;
+	else if(nowx>=viewportX+visibleMaxx)viewportX=nowx-visibleMaxx+1;
+	if(nowy<viewportY)viewportY=nowy;
+	else if(nowy>=viewportY+visibleMaxy)viewportY=nowy-visibleMaxy+1;
+	viewportX=max(0,min(viewportX,maxx-visibleMaxx));
+	viewportY=max(0,min(viewportY,maxy-visibleMaxy));
+	return previousViewportX!=viewportX||previousViewportY!=viewportY;
+}
+
+void updateTerminalViewport()
+{
+	string sizeValue=to_string(maxx)+"x"+to_string(maxy);
+	long long boardArea=static_cast<long long>(maxx)*maxy;
+	int sizeWidth=static_cast<int>(sizeValue.size())+11;
+	int counterWidth=static_cast<int>(to_string(boardArea).size())+14;
+	panelWidth=max(minimumPanelWidth,max(sizeWidth,counterWidth));
 	struct winsize terminalSize;
 	memset(&terminalSize,0,sizeof(terminalSize));
 	bool sizeAvailable=ioctl(STDOUT_FILENO,TIOCGWINSZ,&terminalSize)==0
 		&&terminalSize.ws_row>0&&terminalSize.ws_col>0;
+	if(!sizeAvailable)
+		sizeAvailable=ioctl(STDIN_FILENO,TIOCGWINSZ,&terminalSize)==0
+			&&terminalSize.ws_row>0&&terminalSize.ws_col>0;
 	terminalRows=sizeAvailable?terminalSize.ws_row:0;
 	terminalColumns=sizeAvailable?terminalSize.ws_col:0;
+	int requiredColumns=minBoardSize*3+2+panelWidth;
 	terminalTooSmall=sizeAvailable
-		&&(terminalRows<minTerminalRows||terminalColumns<minTerminalColumns);
-	if(terminalTooSmall)return false;
+		&&(terminalRows<minTerminalRows||terminalColumns<requiredColumns);
+	if(terminalTooSmall)return;
 
-	int targetWidth=requestedDifficultyV[0];
-	int targetHeight=requestedDifficultyV[1];
+	visibleMaxx=maxx;
+	visibleMaxy=maxy;
 	if(sizeAvailable)
 	{
 		int supportedWidth=(terminalColumns-panelWidth-2)/3;
 		int supportedHeight=terminalRows-reservedTerminalRows;
-		targetWidth=min(targetWidth,supportedWidth);
-		targetHeight=min(targetHeight,supportedHeight);
+		visibleMaxy=min(maxy,supportedWidth);
+		visibleMaxx=min(maxx,supportedHeight);
 	}
-	int targetArea=targetWidth*targetHeight;
-	int targetMineNum=min(requestedDifficultyV[2],targetArea>1?targetArea-1:0);
-	bool boardChanged=difficultyV[0]!=targetWidth
-		||difficultyV[1]!=targetHeight
-		||difficultyV[2]!=targetMineNum;
-	difficultyV[0]=targetWidth;
-	difficultyV[1]=targetHeight;
-	difficultyV[2]=targetMineNum;
-	nowy=min(nowy,targetWidth-1);
-	nowx=min(nowx,targetHeight-1);
+	boardClipped=visibleMaxx<maxx||visibleMaxy<maxy;
 	boardSizeLimited=boardSizeArgumentLimited
-		||targetWidth!=requestedDifficultyV[0]
-		||targetHeight!=requestedDifficultyV[1];
-	return boardChanged;
+		||boardClipped;
+	keepCursorVisible();
+	lastLine=max(visibleMaxx+5,minTerminalRows);
 }
 
-void quit()
+void restoreTerminal()
 {
 	SColor::echoCursor();
 	endColor();
@@ -197,6 +220,11 @@ void quit()
 	//------  restore old settings ---------
 	int res;
 	res=tcsetattr(STDIN_FILENO, TCSANOW, &org_opts);assert(res==0);
+}
+
+void quit()
+{
+	restoreTerminal();
 	exit(0);
 }
 
@@ -249,7 +277,7 @@ void renderCell(int x,int y,const CellView &view)
 	}
 	if(view.highlighted)color|=SColor::INVERT;
 	if(view.selected)color|=SColor::HIGHLIGHT;
-	SColor::setCursor(x+2,y*3+2);
+	SColor::setCursor(x-viewportX+2,(y-viewportY)*3+2);
 	beginColor(color);
 	cout<<(view.selected?'[':' ')
 		<<view.value
@@ -261,7 +289,7 @@ void refreshStatus()
 {
 	if(!renderedStatusValid||renderedRestOfSquare!=theRestOfSquare)
 	{
-		SColor::setCursor(17,3*maxy+3);
+		SColor::setCursor(17,3*visibleMaxy+3);
 		beginColor(labelColor);
 		cout<<" rest square:";
 		beginColor(keyColor);
@@ -272,7 +300,7 @@ void refreshStatus()
 	}
 	if(!renderedStatusValid||renderedRestOfMine!=theRestOfMine)
 	{
-		SColor::setCursor(18,3*maxy+3);
+		SColor::setCursor(18,3*visibleMaxy+3);
 		beginColor(labelColor);
 		cout<<" rest mine  :";
 		beginColor(keyColor);
@@ -287,24 +315,27 @@ void refreshStatus()
 void refreshMap(int finished=0)
 {
 	if(terminalTooSmall)return;
-	for(int i=0;i<maxx;i++)
-		for(int j=0;j<maxy;j++)
+	for(int i=viewportX;i<viewportX+visibleMaxx;i++)
+		for(int j=viewportY;j<viewportY+visibleMaxy;j++)
 		{
 			CellView view=getCellView(i,j,finished);
-			if(!sameCellView(mRendered[i][j],view))
+			CellView &rendered=mRendered[i-viewportX][j-viewportY];
+			if(!sameCellView(rendered,view))
 			{
 				renderCell(i,j,view);
-				mRendered[i][j]=view;
+				rendered=view;
 			}
-			if(view.highlighted)mHighlight[i][j]=false;
 		}
+	for(size_t i=0;i<highlightedCells.size();i++)
+		mHighlight[highlightedCells[i].first][highlightedCells[i].second]=false;
+	highlightedCells.clear();
 	refreshStatus();
 	cout.flush();
 }
 
 void drawControl(int row,const string &label,const string &key)
 {
-	SColor::setCursor(row,3*maxy+3);
+	SColor::setCursor(row,3*visibleMaxy+3);
 	cout<<"   ";
 	beginColor(labelColor);
 	cout<<label;
@@ -326,26 +357,27 @@ void drawLayout()
 	beginColor(borderColor);
 	SColor::setCursor(1,1);
 	cout<<topLeft;
-	for(int i=0;i<maxy*3;i++)cout<<horizontal;
+	for(int i=0;i<visibleMaxy*3;i++)cout<<horizontal;
 	cout<<topRight;
-	for(int i=0;i<maxx;i++)
+	bool horizontallyClipped=visibleMaxy<maxy;
+	for(int i=0;i<visibleMaxx;i++)
 	{
 		SColor::setCursor(i+2,1);
 		cout<<vertical;
-		SColor::setCursor(i+2,3*maxy+2);
-		cout<<vertical;
+		SColor::setCursor(i+2,3*visibleMaxy+2);
+		cout<<(horizontallyClipped&&i%2==0?">":vertical);
 	}
-	SColor::setCursor(maxx+2,1);
+	SColor::setCursor(visibleMaxx+2,1);
 	cout<<bottomLeft;
-	for(int i=0;i<maxy*3;i++)cout<<horizontal;
+	for(int i=0;i<visibleMaxy*3;i++)cout<<horizontal;
 	cout<<bottomRight;
 	endColor();
-	SColor::setCursor(2,3*maxy+3);
+	SColor::setCursor(2,3*visibleMaxy+3);
 	cout<<"   ";
 	beginColor(borderColor);
 	cout<<(unicodeEnabled?"╭─────────────╮":"+-------------+");
 	endColor();
-	SColor::setCursor(3,3*maxy+3);
+	SColor::setCursor(3,3*visibleMaxy+3);
 	cout<<"   ";
 	beginColor(borderColor);
 	cout<<(unicodeEnabled?"│":"|");
@@ -354,7 +386,7 @@ void drawLayout()
 	beginColor(borderColor);
 	cout<<(unicodeEnabled?"│":"|");
 	endColor();
-	SColor::setCursor(4,3*maxy+3);
+	SColor::setCursor(4,3*visibleMaxy+3);
 	cout<<"   ";
 	beginColor(borderColor);
 	cout<<(unicodeEnabled?"│":"|");
@@ -363,12 +395,12 @@ void drawLayout()
 	beginColor(borderColor);
 	cout<<(unicodeEnabled?"│":"|");
 	endColor();
-	SColor::setCursor(5,3*maxy+3);
+	SColor::setCursor(5,3*visibleMaxy+3);
 	cout<<"   ";
 	beginColor(borderColor);
 	cout<<(unicodeEnabled?"╰─────────────╯":"+-------------+");
 	endColor();
-	SColor::setCursor(6,3*maxy+3);
+	SColor::setCursor(6,3*visibleMaxy+3);
 	cout<<"   ";
 	beginColor(labelColor);
 	cout<<"size   :";
@@ -377,10 +409,10 @@ void drawLayout()
 	endColor();
 	if(boardSizeLimited)
 	{
-		SColor::setCursor(15,3*maxy+3);
+		SColor::setCursor(15,3*visibleMaxy+3);
 		cout<<"   ";
 		beginColor(failureColor);
-		cout<<"warning:limited";
+		cout<<(boardClipped?"warning:clipped":"warning:limited");
 		endColor();
 	}
 	drawControl(7,"up","w");
@@ -397,24 +429,26 @@ void drawLayout()
 void clearMessages()
 {
 	if(terminalTooSmall)return;
-	string blank(3*maxy+2,' ');
-	SColor::setCursor(maxx+3,1);
+	string blank(3*visibleMaxy+2,' ');
+	SColor::setCursor(visibleMaxx+3,1);
 	cout<<blank;
-	SColor::setCursor(maxx+4,1);
+	SColor::setCursor(visibleMaxx+4,1);
 	cout<<blank;
 	cout.flush();
 }
 
 void invalidateRenderedState()
 {
-	memset(mRendered,0,sizeof(mRendered));
+	CellView emptyView={'.',0,CELL_DEFAULT,false,false,false};
+	if(terminalTooSmall)mRendered.clear();
+	else mRendered.assign(visibleMaxx,vector<CellView>(visibleMaxy,emptyView));
 	renderedStatusValid=false;
 }
 
 void showGameResult(int finished)
 {
 	if(terminalTooSmall)return;
-	SColor::setCursor(maxx+3,1);
+	SColor::setCursor(visibleMaxx+3,1);
 	beginColor(finished==1?successColor:failureColor);
 	cout<<(finished==1?"you win! ":"you lose!");
 	endColor();
@@ -424,7 +458,7 @@ void showGameResult(int finished)
 void showNewGamePrompt()
 {
 	if(terminalTooSmall)return;
-	SColor::setCursor(maxx+4,1);
+	SColor::setCursor(visibleMaxx+4,1);
 	beginColor(labelColor);
 	cout<<"new game ";
 	beginColor(keyColor);
@@ -439,7 +473,9 @@ void showNewGamePrompt()
 
 void drawTerminalWarning()
 {
-	string message="warning: terminal too small; need 47x19";
+	int requiredColumns=minBoardSize*3+2+panelWidth;
+	string message="warning: terminal too small; need "
+		+to_string(requiredColumns)+"x"+to_string(minTerminalRows);
 	if(terminalColumns>0&&message.size()>static_cast<size_t>(terminalColumns))
 		message.resize(terminalColumns);
 	SColor::setCursor(1,1);
@@ -495,12 +531,7 @@ bool sweepMine(int x,int y)
 						mMap[i][j]++;
 		}
 	}
-	else if(mMine[x][y])
-	{
-		mSight[x][y]=true;
-		return false;
-	}
-	bool flag=true;
+	vector<pair<int,int> > pending;
 	if(mSight[x][y])
 	{
 		int cnt=0;
@@ -513,39 +544,65 @@ bool sweepMine(int x,int y)
 			for(int i=x-1;i<x+2;i++)
 				for(int j=y-1;j<y+2;j++)
 					if(i>=0&&j>=0&&i<maxx&&j<maxy)
+					{
 						mHighlight[i][j]=true;
-			flag=false;
+						highlightedCells.push_back(make_pair(i,j));
+					}
+			return true;
 		}
-	}
-	else
-	{
-		theRestOfSquare--;
-		mSight[x][y]=true;
-		if(mMap[x][y])flag=false;
-	}
-	if(flag)
-	{
 		for(int i=x-1;i<x+2;i++)
 			for(int j=y-1;j<y+2;j++)
-				if(i>=0&&j>=0&&i<maxx&&j<maxy&&!mSight[i][j])
-					if(!sweepMine(i,j))
-						flag=false;
-		return flag;
+				if(i>=0&&j>=0&&i<maxx&&j<maxy&&!mSight[i][j]&&!mFlag[i][j])
+					pending.push_back(make_pair(i,j));
 	}
-	return true;
+	else pending.push_back(make_pair(x,y));
+
+	bool safe=true;
+	while(!pending.empty())
+	{
+		int currentX=pending.back().first;
+		int currentY=pending.back().second;
+		pending.pop_back();
+		if(mSight[currentX][currentY]||mFlag[currentX][currentY])continue;
+		if(mMine[currentX][currentY])
+		{
+			mSight[currentX][currentY]=true;
+			safe=false;
+			continue;
+		}
+		mSight[currentX][currentY]=true;
+		theRestOfSquare--;
+		hiddenSafeSquares--;
+		if(mMap[currentX][currentY])continue;
+		for(int i=currentX-1;i<currentX+2;i++)
+			for(int j=currentY-1;j<currentY+2;j++)
+				if(i>=0&&j>=0&&i<maxx&&j<maxy&&!mSight[i][j]&&!mFlag[i][j])
+					pending.push_back(make_pair(i,j));
+	}
+	return safe;
 }
 
 void init()
 {
-	lastLine=max(maxx+5,19);
+	if(!terminalTooSmall)lastLine=max(visibleMaxx+5,minTerminalRows);
 	gameResult=0;
 	firstMove=true;
-	memset(mMine,false,sizeof(mMine));
-	memset(mSight,false,sizeof(mSight));
-	memset(mHighlight,false,sizeof(mHighlight));
-	//memset(mSight,true,sizeof(mSight));
-	memset(mMap,0,sizeof(mMap));
-	memset(mFlag,false,sizeof(mFlag));
+	highlightedCells.clear();
+	try
+	{
+		mMine.assign(maxx,vector<bool>(maxy,false));
+		mSight.assign(maxx,vector<bool>(maxy,false));
+		mHighlight.assign(maxx,vector<bool>(maxy,false));
+		mMap.assign(maxx,vector<int>(maxy,0));
+		mFlag.assign(maxx,vector<bool>(maxy,false));
+		invalidateRenderedState();
+	}
+	catch(const exception &)
+	{
+		restoreTerminal();
+		cerr<<"error: unable to allocate the requested board"<<endl;
+		exit(1);
+	}
 	int mineY,mineX;
 	for(int k=0;k<mineNum;k++)
 	{
@@ -562,7 +619,8 @@ void init()
 		}
 	}
 	theRestOfMine=mineNum;
-	theRestOfSquare=maxy*maxx;
+	theRestOfSquare=static_cast<long long>(maxy)*maxx;
+	hiddenSafeSquares=theRestOfSquare-mineNum;
 }
 
 bool getInput()
@@ -571,7 +629,7 @@ bool getInput()
 	{
 		if(terminalResized)
 		{
-			if(fitBoardToTerminal())init();
+			updateTerminalViewport();
 			redrawScreen();
 			continue;
 		}
@@ -614,7 +672,7 @@ bool getInput()
 			if(mFlag[nowx][nowy])break;
 			return sweepMine(nowx,nowy);
 		case 'r':
-			fitBoardToTerminal();
+			updateTerminalViewport();
 			init();
 			return true;
 		case 'q':
@@ -626,11 +684,7 @@ bool getInput()
 
 bool winGame()
 {
-	bool wingame=true;
-	for(int i=0;i<maxx&&wingame;i++)
-		for(int j=0;j<maxy&&wingame;j++)
-			if(!(mMine[i][j]||mSight[i][j]))wingame=false;
-	return wingame;
+	return hiddenSafeSquares==0;
 }
 
 void gameStart()
@@ -644,6 +698,8 @@ void gameStart()
 			showGameResult(gameResult);
 			return;
 		}
+		if(!terminalTooSmall&&keepCursorVisible())
+			invalidateRenderedState();
 		refreshMap();
 		if(!getInput())
 		{
@@ -662,12 +718,8 @@ bool newGameStart()
 	{
 		if(terminalResized)
 		{
-			if(fitBoardToTerminal())
-			{
-				init();
-				redrawScreen(0,true);
-			}
-			else redrawScreen(gameResult,true);
+			updateTerminalViewport();
+			redrawScreen(gameResult,true);
 			continue;
 		}
 		errno=0;
@@ -737,8 +789,10 @@ void argsParse(int argc,char **argv)
 					+"*"+to_string(hardV[1])
 					+"("+to_string(hardV[2])+"))"
 					,{'3','H',"hard"});
-	args::Positional<int> height(parser,"height","set height (9-100)");
-	args::Positional<int> weight(parser,"width","set width (9-100)");
+	args::Flag noMaxSize(parser,"no max size",
+					"Allow board dimensions above 100.",{"no-max-size"});
+	args::Positional<int> height(parser,"height","set height (minimum 9)");
+	args::Positional<int> weight(parser,"width","set width (minimum 9)");
 	args::Positional<int> acountOfMine(parser,"acount of mine","set acount of mine");
 	try{
 		parser.ParseCLI(argc,argv);
@@ -772,31 +826,34 @@ void argsParse(int argc,char **argv)
 	{
 		int requestedHeight=args::get(height);
 		int requestedWidth=weight?args::get(weight):minBoardSize;
-		boardSizeArgumentLimited=requestedHeight<minBoardSize||requestedHeight>MAXX
-			||requestedWidth<minBoardSize||requestedWidth>MAXY;
-		maxx=max(minBoardSize,min(MAXX,requestedHeight));
-		maxy=max(minBoardSize,min(MAXY,requestedWidth));
-		if(acountOfMine)mineNum=max(1,min(maxx*maxy,args::get(acountOfMine)));
-		else mineNum=sqrt(maxx*maxy);
+		boardSizeArgumentLimited=requestedHeight<minBoardSize
+			||requestedWidth<minBoardSize
+			||(!noMaxSize&&(requestedHeight>MAXX||requestedWidth>MAXY));
+		maxx=max(minBoardSize,noMaxSize?requestedHeight:min(MAXX,requestedHeight));
+		maxy=max(minBoardSize,noMaxSize?requestedWidth:min(MAXY,requestedWidth));
+		long long boardArea=static_cast<long long>(maxx)*maxy;
+		int maxMineNum=boardArea>numeric_limits<int>::max()
+			?numeric_limits<int>::max():static_cast<int>(boardArea-1);
+		if(acountOfMine)mineNum=max(1,min(maxMineNum,args::get(acountOfMine)));
+		else mineNum=static_cast<int>(sqrt(static_cast<double>(boardArea)));
 		difficulty=difficultyV;
 	}
 	else difficulty=normalV;
 	if(difficultyV!=difficulty)memcpy(difficultyV,difficulty,sizeof(int)*3);
-	memcpy(requestedDifficultyV,difficultyV,sizeof(requestedDifficultyV));
 }
 
 int main(int argc,char** argv)
 {
 	argsParse(argc,argv);
 	realInit();
-	fitBoardToTerminal();
+	updateTerminalViewport();
 	init();
 	redrawScreen();
 	do{
 		gameStart();
 		if(!newGameStart())break;
 		clearMessages();
-		fitBoardToTerminal();
+		updateTerminalViewport();
 		init();
 	}while(1);
 	quit();
