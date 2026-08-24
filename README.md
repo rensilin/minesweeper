@@ -33,4 +33,4 @@ or
 
 UTF-8 terminals use continuous box-drawing borders, and interactive terminals use color. Non-UTF-8 locales fall back to ASCII automatically. Set `NO_COLOR=1` to keep the TUI monochrome.
 
-The side panel always shows the active board size as rows by columns. Boards that exceed the terminal are reduced to fit and marked `warning:limited`. Resizing to a capacity that changes the board size starts a new game. Terminals smaller than 47 columns by 19 rows show a resize warning instead of the board.
+The side panel always shows the active board size as rows by columns. Command-line dimensions outside 9-100 and boards that exceed the terminal are reduced to supported values and marked `warning:limited`. Resizing to a capacity that changes the board size starts a new game. Terminals smaller than 47 columns by 19 rows show a resize warning instead of the board.

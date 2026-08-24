@@ -53,6 +53,7 @@ const int panelWidth=18;
 const int reservedTerminalRows=5;
 const int minTerminalRows=19;
 const int minTerminalColumns=47;
+const int minBoardSize=9;
 
 int mMap[MAXX][MAXY];
 bool mMine[MAXX][MAXY];
@@ -78,6 +79,7 @@ volatile sig_atomic_t terminalResized;
 bool colorEnabled;
 bool unicodeEnabled;
 bool boardSizeLimited;
+bool boardSizeArgumentLimited;
 bool terminalTooSmall;
 int terminalRows;
 int terminalColumns;
@@ -180,7 +182,8 @@ bool fitBoardToTerminal()
 	difficultyV[2]=targetMineNum;
 	nowy=min(nowy,targetWidth-1);
 	nowx=min(nowx,targetHeight-1);
-	boardSizeLimited=targetWidth!=requestedDifficultyV[0]
+	boardSizeLimited=boardSizeArgumentLimited
+		||targetWidth!=requestedDifficultyV[0]
 		||targetHeight!=requestedDifficultyV[1];
 	return boardChanged;
 }
@@ -734,8 +737,8 @@ void argsParse(int argc,char **argv)
 					+"*"+to_string(hardV[1])
 					+"("+to_string(hardV[2])+"))"
 					,{'3','H',"hard"});
-	args::Positional<int> height(parser,"height","set height");
-	args::Positional<int> weight(parser,"weight","set weight");
+	args::Positional<int> height(parser,"height","set height (9-100)");
+	args::Positional<int> weight(parser,"width","set width (9-100)");
 	args::Positional<int> acountOfMine(parser,"acount of mine","set acount of mine");
 	try{
 		parser.ParseCLI(argc,argv);
@@ -767,9 +770,12 @@ void argsParse(int argc,char **argv)
 	else if(hard)difficulty=hardV;
 	else if(height)
 	{
-		maxx=max(9,min(100,args::get(height)));
-		if(weight)maxy=max(9,min(100,args::get(weight)));
-		else maxy=9;
+		int requestedHeight=args::get(height);
+		int requestedWidth=weight?args::get(weight):minBoardSize;
+		boardSizeArgumentLimited=requestedHeight<minBoardSize||requestedHeight>MAXX
+			||requestedWidth<minBoardSize||requestedWidth>MAXY;
+		maxx=max(minBoardSize,min(MAXX,requestedHeight));
+		maxy=max(minBoardSize,min(MAXY,requestedWidth));
 		if(acountOfMine)mineNum=max(1,min(maxx*maxy,args::get(acountOfMine)));
 		else mineNum=sqrt(maxx*maxy);
 		difficulty=difficultyV;
