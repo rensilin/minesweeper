@@ -21,6 +21,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
+#include <errno.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
@@ -58,10 +60,35 @@ int nowy, nowx;
 int theRestOfMine=mineNum;
 int theRestOfSquare=maxy*maxx;
 
-char cInput;
+int cInput;
 bool firstMove;
 SColor defaultColor;
 int lastLine;
+int gameResult;
+volatile sig_atomic_t terminalResized;
+
+enum CellStyle
+{
+	CELL_DEFAULT,
+	CELL_NUMBER,
+	CELL_FLAG,
+	CELL_ERROR
+};
+
+struct CellView
+{
+	char value;
+	int number;
+	CellStyle style;
+	bool selected;
+	bool highlighted;
+	bool valid;
+};
+
+CellView mRendered[MAXX][MAXY];
+int renderedRestOfMine;
+int renderedRestOfSquare;
+bool renderedStatusValid;
 
 SColor nColor[]={
 	SColor(),
@@ -87,61 +114,169 @@ void quit()
 	exit(0);
 }
 
-void printMap(int finished=0)
+bool sameCellView(const CellView &left,const CellView &right)
 {
-	SColor::setCursor(17,3*maxy+2);	cout<<"  rest square:"<<theRestOfSquare;SColor::cleanLine();
-	SColor::setCursor(18,3*maxy+2);	cout<<"  rest mine  :"<<theRestOfMine;SColor::cleanLine();
-	SColor::setCursor(1,1);
-	for(int i=-2;i<maxy*3;i++)cout<<'-';
-	cout<<endl;
-	for(int i=0;i<maxx;i++)
+	return left.valid
+		&&left.value==right.value
+		&&left.number==right.number
+		&&left.style==right.style
+		&&left.selected==right.selected
+		&&left.highlighted==right.highlighted;
+}
+
+CellView getCellView(int x,int y,int finished)
+{
+	CellView view={'.',0,CELL_DEFAULT,nowx==x&&nowy==y,false,true};
+	if(mFlag[x][y])view.value='@';
+	else if(mSight[x][y])
 	{
-		cout<<'|';
+		if(mMine[x][y])view.value='*';
+		else if(mMap[x][y])
+		{
+			view.value='0'+mMap[x][y];
+			view.number=mMap[x][y];
+			view.style=CELL_NUMBER;
+		}
+		else view.value=' ';
+	}
+	if(finished==-1&&mFlag[x][y]&&!mMine[x][y])view.style=CELL_ERROR;
+	if(finished==-1&&mMine[x][y]&&mSight[x][y])view.style=CELL_ERROR;
+	if(finished==0&&mFlag[x][y])view.style=CELL_FLAG;
+	view.highlighted=!mSight[x][y]&&mHighlight[x][y];
+	return view;
+}
+
+void renderCell(int x,int y,const CellView &view)
+{
+	SColor color;
+	if(view.style==CELL_NUMBER)color=nColor[view.number];
+	else if(view.style==CELL_FLAG)
+	{
+		color.setFg(SColor::CYAN);
+		color|=SColor::HIGHLIGHT|SColor::ITALIC;
+	}
+	else if(view.style==CELL_ERROR)
+	{
+		color.setFg(SColor::BLACK).setBg(SColor::RED);
+		color|=SColor::HIGHLIGHT;
+	}
+	if(view.highlighted)color|=SColor::INVERT;
+	SColor::setCursor(x+2,y*3+2);
+	cout<<color
+		<<(view.selected?'[':' ')
+		<<view.value
+		<<(view.selected?']':' ')
+		<<defaultColor;
+}
+
+void refreshStatus()
+{
+	if(!renderedStatusValid||renderedRestOfSquare!=theRestOfSquare)
+	{
+		SColor::setCursor(17,3*maxy+3);
+		cout<<" rest square:"<<theRestOfSquare;
+		SColor::cleanLine();
+		renderedRestOfSquare=theRestOfSquare;
+	}
+	if(!renderedStatusValid||renderedRestOfMine!=theRestOfMine)
+	{
+		SColor::setCursor(18,3*maxy+3);
+		cout<<" rest mine  :"<<theRestOfMine;
+		SColor::cleanLine();
+		renderedRestOfMine=theRestOfMine;
+	}
+	renderedStatusValid=true;
+}
+
+void refreshMap(int finished=0)
+{
+	for(int i=0;i<maxx;i++)
 		for(int j=0;j<maxy;j++)
 		{
-			SColor color;
-			if(mSight[i][j]&&!mMine[i][j])
-				color=nColor[mMap[i][j]];
-			if(finished==-1)
+			CellView view=getCellView(i,j,finished);
+			if(!sameCellView(mRendered[i][j],view))
 			{
-				if(mFlag[i][j]&&!mMine[i][j])
-					color.setFg(SColor::BLACK).setBg(SColor::RED);
-				if(mMine[i][j]&&mSight[i][j])
-				{
-					color.setFg(SColor::BLACK).setBg(SColor::RED);
-					color|=SColor::HIGHLIGHT;
-				}
+				renderCell(i,j,view);
+				mRendered[i][j]=view;
 			}
-			if(finished==0&&mFlag[i][j])
-			{
-				color.setFg(SColor::CYAN);
-				color|=SColor::HIGHLIGHT|SColor::ITALIC;
-			}
-			if(!mSight[i][j]&&mHighlight[i][j])
-			{
-				mHighlight[i][j]=false;
-				color|=SColor::INVERT;
-			}
-			cout<<color;
-			if((i==nowx)&&(j==nowy))cout<<'[';
-			else cout<<' ';
-			if(mFlag[i][j])cout<<'@';
-			else if(mSight[i][j])
-			{
-				if(mMine[i][j])cout<<'*';
-				else if(mMap[i][j])cout<<mMap[i][j];
-				else cout<<" ";
-			}
-			else cout<<'.';
-			if((i==nowx)&&(j==nowy))cout<<']';
-			else cout<<' ';
-			cout<<defaultColor;
+			if(view.highlighted)mHighlight[i][j]=false;
 		}
+	refreshStatus();
+	cout.flush();
+}
+
+void drawLayout()
+{
+	SColor::setCursor(1,1);
+	for(int i=-2;i<maxy*3;i++)cout<<'-';
+	for(int i=0;i<maxx;i++)
+	{
+		SColor::setCursor(i+2,1);
 		cout<<'|';
-		cout<<endl;
+		SColor::setCursor(i+2,3*maxy+2);
+		cout<<'|';
 	}
-	for(int j=-2;j<maxy*3;j++)cout<<'-';
-	cout<<endl;
+	SColor::setCursor(maxx+2,1);
+	for(int i=-2;i<maxy*3;i++)cout<<'-';
+	SColor::setCursor(2,3*maxy+3);		cout<<"   ***************";
+	SColor::setCursor(3,3*maxy+3);		cout<<"   * minesweeper *";
+	SColor::setCursor(4,3*maxy+3);		cout<<"   *     "<<version<<"    *";
+	SColor::setCursor(5,3*maxy+3);		cout<<"   ***************";
+	SColor::setCursor(7,3*maxy+3);		cout<<"   up     :w";
+	SColor::setCursor(8,3*maxy+3);		cout<<"   down   :s";
+	SColor::setCursor(9,3*maxy+3);		cout<<"   left   :a";
+	SColor::setCursor(10,3*maxy+3);		cout<<"   right  :d";
+	SColor::setCursor(11,3*maxy+3);		cout<<"   flag   :j";
+	SColor::setCursor(12,3*maxy+3);		cout<<"   sweep  :space";
+	SColor::setCursor(13,3*maxy+3);		cout<<"   restart:r";
+	SColor::setCursor(14,3*maxy+3);		cout<<"   quit   :q";
+	cout.flush();
+}
+
+void clearMessages()
+{
+	string blank(3*maxy+2,' ');
+	SColor::setCursor(maxx+3,1);
+	cout<<blank;
+	SColor::setCursor(maxx+4,1);
+	cout<<blank;
+	cout.flush();
+}
+
+void invalidateRenderedState()
+{
+	memset(mRendered,0,sizeof(mRendered));
+	renderedStatusValid=false;
+}
+
+void showGameResult(int finished)
+{
+	SColor::setCursor(maxx+3,1);
+	cout<<(finished==1?"you win! ":"you lose!");
+	cout.flush();
+}
+
+void showNewGamePrompt()
+{
+	SColor::setCursor(maxx+4,1);
+	cout<<"press y to start a new game";
+	cout.flush();
+}
+
+void redrawScreen(int finished=0,bool showPrompt=false)
+{
+	terminalResized=0;
+	SColor::clean();
+	invalidateRenderedState();
+	drawLayout();
+	refreshMap(finished);
+	if(finished)showGameResult(finished);
+	if(showPrompt)showNewGamePrompt();
+}
+
+void handleTerminalResize(int)
+{
+	terminalResized=1;
 }
 
 bool sweepMine(int x,int y)
@@ -211,7 +346,8 @@ bool sweepMine(int x,int y)
 
 void init()
 {
-	lastLine=max(maxx+2,18);
+	lastLine=max(maxx+5,19);
+	gameResult=0;
 	firstMove=true;
 	memset(mMine,false,sizeof(mMine));
 	memset(mSight,false,sizeof(mSight));
@@ -236,26 +372,28 @@ void init()
 	}
 	theRestOfMine=mineNum;
 	theRestOfSquare=maxy*maxx;
-	cout<<"loading...";
-	SColor::setCursor(2,3*maxy+2);		cout<<"    ***************";
-	SColor::setCursor(3,3*maxy+2);		cout<<"    * minesweeper *";
-	SColor::setCursor(4,3*maxy+2);		cout<<"    *     "<<version<<"    *";
-	SColor::setCursor(5,3*maxy+2);		cout<<"    ***************";
-	SColor::setCursor(7,3*maxy+2);		cout<<"    up     :w";
-	SColor::setCursor(8,3*maxy+2);		cout<<"    down   :s";
-	SColor::setCursor(9,3*maxy+2);		cout<<"    left   :a";
-	SColor::setCursor(10,3*maxy+2);		cout<<"    right  :d";
-	SColor::setCursor(11,3*maxy+2);		cout<<"    flag   :j";
-	SColor::setCursor(12,3*maxy+2);		cout<<"    sweep  :space";
-	SColor::setCursor(13,3*maxy+2);		cout<<"    restart:r";
-	SColor::setCursor(14,3*maxy+2);		cout<<"    quit   :q";
 }
 
 bool getInput()
 {
 	while(1)
 	{
+		if(terminalResized)
+		{
+			redrawScreen();
+			continue;
+		}
+		errno=0;
 		cInput=getchar();
+		if(cInput==EOF)
+		{
+			if(errno==EINTR)
+			{
+				clearerr(stdin);
+				continue;
+			}
+			quit();
+		}
 		switch (cInput)
 		{
 		case 'w':
@@ -299,27 +437,50 @@ bool winGame()
 
 void gameStart()
 {
-	do{
+	while(1)
+	{
 		if(winGame())
 		{
-			printMap(1);
-			cout<<"you win!"<<endl;
+			gameResult=1;
+			refreshMap(gameResult);
+			showGameResult(gameResult);
 			return;
 		}
-		printMap();
-	}while(getInput());
-	printMap(-1);
-	cout<<"you lose!"<<endl;
+		refreshMap();
+		if(!getInput())
+		{
+			gameResult=-1;
+			refreshMap(gameResult);
+			showGameResult(gameResult);
+			return;
+		}
+	}
 }
 
 bool newGameStart()
 {
-	cout<<"press y to start a new game"<<endl;
-	lastLine=max(maxx+4,18);
-	char c;
-	while((c=getchar())!='y'&&c!='q');
-	if(c=='q')return false;
-	return true;
+	showNewGamePrompt();
+	while(1)
+	{
+		if(terminalResized)
+		{
+			redrawScreen(gameResult,true);
+			continue;
+		}
+		errno=0;
+		int input=getchar();
+		if(input==EOF)
+		{
+			if(errno==EINTR)
+			{
+				clearerr(stdin);
+				continue;
+			}
+			return false;
+		}
+		if(input=='y')return true;
+		if(input=='q')return false;
+	}
 }
 
 void realInit()
@@ -329,6 +490,11 @@ void realInit()
 	//-----  store old settings -----------
 	res=tcgetattr(STDIN_FILENO, &org_opts);
 	assert(res==0);
+	struct sigaction resizeAction;
+	memset(&resizeAction,0,sizeof(resizeAction));
+	resizeAction.sa_handler=handleTerminalResize;
+	sigemptyset(&resizeAction.sa_mask);
+	res=sigaction(SIGWINCH,&resizeAction,NULL);assert(res==0);
 	//---- set new terminal parms --------
 	memcpy(&new_opts, &org_opts, sizeof(new_opts));
 	new_opts.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ECHOPRT | ECHOKE | ICRNL);
@@ -410,12 +576,14 @@ int main(int argc,char** argv)
 {
 	argsParse(argc,argv);
 	realInit();
+	init();
+	redrawScreen();
 	do{
-		SColor::clean();
-		init();
 		gameStart();
-	}while(newGameStart());
+		if(!newGameStart())break;
+		clearMessages();
+		init();
+	}while(1);
 	quit();
 	return 0;
 }
-
