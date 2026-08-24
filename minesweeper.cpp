@@ -365,14 +365,19 @@ void drawLayout()
 	beginColor(borderColor);
 	cout<<(unicodeEnabled?"╰─────────────╯":"+-------------+");
 	endColor();
+	SColor::setCursor(6,3*maxy+3);
+	cout<<"   ";
+	beginColor(labelColor);
+	cout<<"size   :";
+	beginColor(keyColor);
+	cout<<maxx<<'x'<<maxy;
+	endColor();
 	if(boardSizeLimited)
 	{
-		SColor::setCursor(6,3*maxy+3);
+		SColor::setCursor(15,3*maxy+3);
 		cout<<"   ";
 		beginColor(failureColor);
-		cout<<"warning ";
-		beginColor(titleColor);
-		cout<<maxx<<'x'<<maxy;
+		cout<<"warning:limited";
 		endColor();
 	}
 	drawControl(7,"up","w");
