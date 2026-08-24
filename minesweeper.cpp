@@ -18,6 +18,8 @@
 #include <cstdio>
 #include <iostream>
 #include <ctime>
+#include <cctype>
+#include <clocale>
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
@@ -66,6 +68,8 @@ SColor defaultColor;
 int lastLine;
 int gameResult;
 volatile sig_atomic_t terminalResized;
+bool colorEnabled;
+bool unicodeEnabled;
 
 enum CellStyle
 {
@@ -95,17 +99,49 @@ SColor nColor[]={
 	SColor::BLUE,//1
 	SColor::GREEN,//2
 	SColor::RED,//3
-	SColor(),//4
+	SColor::PURPLE,//4
 	SColor::YELLOW,//5
 	SColor::CYAN,//6
-	SColor::PURPLE,//7
+	SColor::WHITE,//7
 	SColor(SColor::BLACK,SColor::YELLOW)//8
 };
+
+SColor borderColor(SColor::CYAN,SColor::DEFAULT,SColor::HIGHLIGHT);
+SColor titleColor(SColor::YELLOW,SColor::DEFAULT,SColor::HIGHLIGHT);
+SColor labelColor(SColor::CYAN);
+SColor keyColor(SColor::GREEN,SColor::DEFAULT,SColor::HIGHLIGHT);
+SColor hiddenColor(SColor::WHITE,SColor::DEFAULT,SColor::DARK);
+SColor successColor(SColor::GREEN,SColor::DEFAULT,SColor::HIGHLIGHT);
+SColor failureColor(SColor::RED,SColor::DEFAULT,SColor::HIGHLIGHT);
+
+void beginColor(const SColor &color)
+{
+	if(colorEnabled)cout<<color;
+}
+
+void endColor()
+{
+	if(colorEnabled)cout<<defaultColor;
+}
+
+void detectTerminalCapabilities()
+{
+	const char *localeName=setlocale(LC_CTYPE,"");
+	string normalizedLocale=localeName?localeName:"";
+	for(size_t i=0;i<normalizedLocale.size();i++)
+		normalizedLocale[i]=tolower(static_cast<unsigned char>(normalizedLocale[i]));
+	const char *term=getenv("TERM");
+	bool capableTerm=!term||strcmp(term,"dumb")!=0;
+	unicodeEnabled=capableTerm
+		&&(normalizedLocale.find("utf-8")!=string::npos
+			||normalizedLocale.find("utf8")!=string::npos);
+	colorEnabled=capableTerm&&isatty(STDOUT_FILENO)&&getenv("NO_COLOR")==NULL;
+}
 
 void quit()
 {
 	SColor::echoCursor();
-	cout<<defaultColor;
+	endColor();
 	SColor::setCursor(lastLine,1);
 	cout<<endl;
 	//------  restore old settings ---------
@@ -149,7 +185,8 @@ CellView getCellView(int x,int y,int finished)
 void renderCell(int x,int y,const CellView &view)
 {
 	SColor color;
-	if(view.style==CELL_NUMBER)color=nColor[view.number];
+	if(view.style==CELL_DEFAULT&&view.value=='.')color=hiddenColor;
+	else if(view.style==CELL_NUMBER)color=nColor[view.number];
 	else if(view.style==CELL_FLAG)
 	{
 		color.setFg(SColor::CYAN);
@@ -161,12 +198,13 @@ void renderCell(int x,int y,const CellView &view)
 		color|=SColor::HIGHLIGHT;
 	}
 	if(view.highlighted)color|=SColor::INVERT;
+	if(view.selected)color|=SColor::HIGHLIGHT;
 	SColor::setCursor(x+2,y*3+2);
-	cout<<color
-		<<(view.selected?'[':' ')
+	beginColor(color);
+	cout<<(view.selected?'[':' ')
 		<<view.value
-		<<(view.selected?']':' ')
-		<<defaultColor;
+		<<(view.selected?']':' ');
+	endColor();
 }
 
 void refreshStatus()
@@ -174,14 +212,22 @@ void refreshStatus()
 	if(!renderedStatusValid||renderedRestOfSquare!=theRestOfSquare)
 	{
 		SColor::setCursor(17,3*maxy+3);
-		cout<<" rest square:"<<theRestOfSquare;
+		beginColor(labelColor);
+		cout<<" rest square:";
+		beginColor(keyColor);
+		cout<<theRestOfSquare;
+		endColor();
 		SColor::cleanLine();
 		renderedRestOfSquare=theRestOfSquare;
 	}
 	if(!renderedStatusValid||renderedRestOfMine!=theRestOfMine)
 	{
 		SColor::setCursor(18,3*maxy+3);
-		cout<<" rest mine  :"<<theRestOfMine;
+		beginColor(labelColor);
+		cout<<" rest mine  :";
+		beginColor(keyColor);
+		cout<<theRestOfMine;
+		endColor();
 		SColor::cleanLine();
 		renderedRestOfMine=theRestOfMine;
 	}
@@ -205,31 +251,80 @@ void refreshMap(int finished=0)
 	cout.flush();
 }
 
+void drawControl(int row,const string &label,const string &key)
+{
+	SColor::setCursor(row,3*maxy+3);
+	cout<<"   ";
+	beginColor(labelColor);
+	cout<<label;
+	for(size_t i=label.size();i<7;i++)cout<<' ';
+	cout<<':';
+	beginColor(keyColor);
+	cout<<key;
+	endColor();
+}
+
 void drawLayout()
 {
+	const char *horizontal=unicodeEnabled?"─":"-";
+	const char *vertical=unicodeEnabled?"│":"|";
+	const char *topLeft=unicodeEnabled?"┌":"+";
+	const char *topRight=unicodeEnabled?"┐":"+";
+	const char *bottomLeft=unicodeEnabled?"└":"+";
+	const char *bottomRight=unicodeEnabled?"┘":"+";
+	beginColor(borderColor);
 	SColor::setCursor(1,1);
-	for(int i=-2;i<maxy*3;i++)cout<<'-';
+	cout<<topLeft;
+	for(int i=0;i<maxy*3;i++)cout<<horizontal;
+	cout<<topRight;
 	for(int i=0;i<maxx;i++)
 	{
 		SColor::setCursor(i+2,1);
-		cout<<'|';
+		cout<<vertical;
 		SColor::setCursor(i+2,3*maxy+2);
-		cout<<'|';
+		cout<<vertical;
 	}
 	SColor::setCursor(maxx+2,1);
-	for(int i=-2;i<maxy*3;i++)cout<<'-';
-	SColor::setCursor(2,3*maxy+3);		cout<<"   ***************";
-	SColor::setCursor(3,3*maxy+3);		cout<<"   * minesweeper *";
-	SColor::setCursor(4,3*maxy+3);		cout<<"   *     "<<version<<"    *";
-	SColor::setCursor(5,3*maxy+3);		cout<<"   ***************";
-	SColor::setCursor(7,3*maxy+3);		cout<<"   up     :w";
-	SColor::setCursor(8,3*maxy+3);		cout<<"   down   :s";
-	SColor::setCursor(9,3*maxy+3);		cout<<"   left   :a";
-	SColor::setCursor(10,3*maxy+3);		cout<<"   right  :d";
-	SColor::setCursor(11,3*maxy+3);		cout<<"   flag   :j";
-	SColor::setCursor(12,3*maxy+3);		cout<<"   sweep  :space";
-	SColor::setCursor(13,3*maxy+3);		cout<<"   restart:r";
-	SColor::setCursor(14,3*maxy+3);		cout<<"   quit   :q";
+	cout<<bottomLeft;
+	for(int i=0;i<maxy*3;i++)cout<<horizontal;
+	cout<<bottomRight;
+	endColor();
+	SColor::setCursor(2,3*maxy+3);
+	cout<<"   ";
+	beginColor(borderColor);
+	cout<<(unicodeEnabled?"┌─────────────┐":"+-------------+");
+	endColor();
+	SColor::setCursor(3,3*maxy+3);
+	cout<<"   ";
+	beginColor(borderColor);
+	cout<<(unicodeEnabled?"│":"|");
+	beginColor(titleColor);
+	cout<<" minesweeper ";
+	beginColor(borderColor);
+	cout<<(unicodeEnabled?"│":"|");
+	endColor();
+	SColor::setCursor(4,3*maxy+3);
+	cout<<"   ";
+	beginColor(borderColor);
+	cout<<(unicodeEnabled?"│":"|");
+	beginColor(titleColor);
+	cout<<"     "<<version<<"    ";
+	beginColor(borderColor);
+	cout<<(unicodeEnabled?"│":"|");
+	endColor();
+	SColor::setCursor(5,3*maxy+3);
+	cout<<"   ";
+	beginColor(borderColor);
+	cout<<(unicodeEnabled?"└─────────────┘":"+-------------+");
+	endColor();
+	drawControl(7,"up","w");
+	drawControl(8,"down","s");
+	drawControl(9,"left","a");
+	drawControl(10,"right","d");
+	drawControl(11,"flag","j");
+	drawControl(12,"sweep","space");
+	drawControl(13,"restart","r");
+	drawControl(14,"quit","q");
 	cout.flush();
 }
 
@@ -252,14 +347,24 @@ void invalidateRenderedState()
 void showGameResult(int finished)
 {
 	SColor::setCursor(maxx+3,1);
+	beginColor(finished==1?successColor:failureColor);
 	cout<<(finished==1?"you win! ":"you lose!");
+	endColor();
 	cout.flush();
 }
 
 void showNewGamePrompt()
 {
 	SColor::setCursor(maxx+4,1);
-	cout<<"press y to start a new game";
+	beginColor(labelColor);
+	cout<<"new game ";
+	beginColor(keyColor);
+	cout<<"[y]";
+	beginColor(labelColor);
+	cout<<"  quit ";
+	beginColor(keyColor);
+	cout<<"[q]";
+	endColor();
 	cout.flush();
 }
 
@@ -487,6 +592,7 @@ void realInit()
 {
 	struct termios new_opts;
 	int res=0;
+	detectTerminalCapabilities();
 	//-----  store old settings -----------
 	res=tcgetattr(STDIN_FILENO, &org_opts);
 	assert(res==0);

@@ -20,7 +20,7 @@ Match the existing C++ style: tabs for indentation, opening braces on the next l
 
 ## Testing Guidelines
 
-There is no automated test framework or coverage requirement yet. Every change should compile cleanly with `make`. Smoke-test `--help`, `--version`, preset difficulty flags, and any changed argument handling. For gameplay changes, manually verify movement, flagging, sweeping, restart, win/loss output, and terminal restoration after quitting. Confirm ordinary movement does not clear the screen and `SIGWINCH` does. Add tests under `tests/` if introducing independently testable game logic.
+There is no automated test framework or coverage requirement yet. Every change should compile cleanly with `make`. Smoke-test `--help`, `--version`, preset difficulty flags, and any changed argument handling. For gameplay changes, manually verify movement, flagging, sweeping, restart, win/loss output, and terminal restoration after quitting. Confirm ordinary movement does not clear the screen and `SIGWINCH` does. Exercise `LC_ALL=C` and `NO_COLOR=1` when changing rendering. Add tests under `tests/` if introducing independently testable game logic.
 
 ## Commit & Pull Request Guidelines
 

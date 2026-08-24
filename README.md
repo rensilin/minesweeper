@@ -28,3 +28,7 @@ or
 ## more
 
 	minesweeper --help
+
+## terminal support
+
+UTF-8 terminals use continuous box-drawing borders, and interactive terminals use color. Non-UTF-8 locales fall back to ASCII automatically. Set `NO_COLOR=1` to keep the TUI monochrome.
