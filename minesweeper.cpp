@@ -268,10 +268,10 @@ void drawLayout()
 {
 	const char *horizontal=unicodeEnabled?"─":"-";
 	const char *vertical=unicodeEnabled?"│":"|";
-	const char *topLeft=unicodeEnabled?"┌":"+";
-	const char *topRight=unicodeEnabled?"┐":"+";
-	const char *bottomLeft=unicodeEnabled?"└":"+";
-	const char *bottomRight=unicodeEnabled?"┘":"+";
+	const char *topLeft=unicodeEnabled?"╭":"+";
+	const char *topRight=unicodeEnabled?"╮":"+";
+	const char *bottomLeft=unicodeEnabled?"╰":"+";
+	const char *bottomRight=unicodeEnabled?"╯":"+";
 	beginColor(borderColor);
 	SColor::setCursor(1,1);
 	cout<<topLeft;
@@ -292,7 +292,7 @@ void drawLayout()
 	SColor::setCursor(2,3*maxy+3);
 	cout<<"   ";
 	beginColor(borderColor);
-	cout<<(unicodeEnabled?"┌─────────────┐":"+-------------+");
+	cout<<(unicodeEnabled?"╭─────────────╮":"+-------------+");
 	endColor();
 	SColor::setCursor(3,3*maxy+3);
 	cout<<"   ";
@@ -315,7 +315,7 @@ void drawLayout()
 	SColor::setCursor(5,3*maxy+3);
 	cout<<"   ";
 	beginColor(borderColor);
-	cout<<(unicodeEnabled?"└─────────────┘":"+-------------+");
+	cout<<(unicodeEnabled?"╰─────────────╯":"+-------------+");
 	endColor();
 	drawControl(7,"up","w");
 	drawControl(8,"down","s");
