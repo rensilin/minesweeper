@@ -396,7 +396,7 @@ void drawMovementControls()
 {
 	int column=3*visibleMaxy+3;
 	SColor::setCursor(7,column);
-	cout<<"       ";
+	cout<<"     ";
 	beginColor(keyColor);
 	cout<<(unicodeEnabled?"↑":"^")<<"       w";
 	endColor();
