@@ -117,6 +117,11 @@ vector<vector<CellView> > mRendered;
 long long renderedRestOfMine;
 long long renderedRestOfSquare;
 bool renderedStatusValid;
+bool renderedBordersValid;
+bool renderedHiddenAbove;
+bool renderedHiddenBelow;
+bool renderedHiddenLeft;
+bool renderedHiddenRight;
 
 SColor nColor[]={
 	SColor(),
@@ -387,7 +392,7 @@ void drawControl(int row,const string &label,const string &key)
 	endColor();
 }
 
-void drawLayout()
+void drawViewportBorders()
 {
 	const char *horizontal=unicodeEnabled?"─":"-";
 	const char *vertical=unicodeEnabled?"│":"|";
@@ -395,24 +400,67 @@ void drawLayout()
 	const char *topRight=unicodeEnabled?"╮":"+";
 	const char *bottomLeft=unicodeEnabled?"╰":"+";
 	const char *bottomRight=unicodeEnabled?"╯":"+";
+	bool hiddenAbove=viewportX>0;
+	bool hiddenBelow=viewportX+visibleMaxx<maxx;
+	bool hiddenLeft=viewportY>0;
+	bool hiddenRight=viewportY+visibleMaxy<maxy;
+	bool drawTop=!renderedBordersValid||hiddenAbove!=renderedHiddenAbove;
+	bool drawBottom=!renderedBordersValid||hiddenBelow!=renderedHiddenBelow;
+	bool drawLeft=!renderedBordersValid||hiddenLeft!=renderedHiddenLeft;
+	bool drawRight=!renderedBordersValid||hiddenRight!=renderedHiddenRight;
+	if(!(drawTop||drawBottom||drawLeft||drawRight))return;
 	beginColor(borderColor);
-	SColor::setCursor(1,1);
-	cout<<topLeft;
-	for(int i=0;i<visibleMaxy*3;i++)cout<<horizontal;
-	cout<<topRight;
-	bool horizontallyClipped=visibleMaxy<maxy;
-	for(int i=0;i<visibleMaxx;i++)
+	if(drawTop)
 	{
-		SColor::setCursor(i+2,1);
-		cout<<vertical;
-		SColor::setCursor(i+2,3*visibleMaxy+2);
-		cout<<(horizontallyClipped&&i%2==0?">":vertical);
+		SColor::setCursor(1,1);
+		cout<<topLeft;
+		for(int i=0;i<visibleMaxy;i++)
+		{
+			cout<<horizontal;
+			cout<<(hiddenAbove&&i%2==0?"^":horizontal);
+			cout<<horizontal;
+		}
+		cout<<topRight;
 	}
-	SColor::setCursor(visibleMaxx+2,1);
-	cout<<bottomLeft;
-	for(int i=0;i<visibleMaxy*3;i++)cout<<horizontal;
-	cout<<bottomRight;
+	if(drawLeft||drawRight)
+	{
+		for(int i=0;i<visibleMaxx;i++)
+		{
+			if(drawLeft)
+			{
+				SColor::setCursor(i+2,1);
+				cout<<(hiddenLeft&&i%2==0?"<":vertical);
+			}
+			if(drawRight)
+			{
+				SColor::setCursor(i+2,3*visibleMaxy+2);
+				cout<<(hiddenRight&&i%2==0?">":vertical);
+			}
+		}
+	}
+	if(drawBottom)
+	{
+		SColor::setCursor(visibleMaxx+2,1);
+		cout<<bottomLeft;
+		for(int i=0;i<visibleMaxy;i++)
+		{
+			cout<<horizontal;
+			cout<<(hiddenBelow&&i%2==0?"v":horizontal);
+			cout<<horizontal;
+		}
+		cout<<bottomRight;
+	}
 	endColor();
+	renderedHiddenAbove=hiddenAbove;
+	renderedHiddenBelow=hiddenBelow;
+	renderedHiddenLeft=hiddenLeft;
+	renderedHiddenRight=hiddenRight;
+	renderedBordersValid=true;
+}
+
+void drawLayout()
+{
+	drawViewportBorders();
 	SColor::setCursor(2,3*visibleMaxy+3);
 	cout<<"   ";
 	beginColor(borderColor);
@@ -456,6 +504,13 @@ void drawLayout()
 		cout<<(boardClipped?"warning:clipped":"warning:limited");
 		endColor();
 	}
+	SColor::setCursor(16,3*visibleMaxy+3);
+	cout<<"   ";
+	beginColor(labelColor);
+	cout<<"view   :";
+	beginColor(keyColor);
+	cout<<visibleMaxx<<'x'<<visibleMaxy;
+	endColor();
 	drawControl(7,"up","w");
 	drawControl(8,"down","s");
 	drawControl(9,"left","a");
@@ -535,6 +590,7 @@ void drawTerminalWarning()
 void redrawScreen(int finished=0,bool showPrompt=false)
 {
 	terminalResized=0;
+	renderedBordersValid=false;
 	invalidateRenderedState();
 	SColor::clean();
 	if(terminalTooSmall)
@@ -746,7 +802,10 @@ void gameStart()
 			return;
 		}
 		if(!terminalTooSmall&&keepCursorVisible())
+		{
 			invalidateRenderedState();
+			drawViewportBorders();
+		}
 		refreshMap();
 		if(!getInput())
 		{
