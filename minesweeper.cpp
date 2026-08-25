@@ -335,7 +335,7 @@ void refreshStatus()
 {
 	if(!renderedStatusValid||renderedRestOfSquare!=theRestOfSquare)
 	{
-		SColor::setCursor(17,3*visibleMaxy+3);
+		SColor::setCursor(10,3*visibleMaxy+3);
 		beginColor(labelColor);
 		cout<<" rest square:";
 		beginColor(keyColor);
@@ -346,7 +346,7 @@ void refreshStatus()
 	}
 	if(!renderedStatusValid||renderedRestOfMine!=theRestOfMine)
 	{
-		SColor::setCursor(18,3*visibleMaxy+3);
+		SColor::setCursor(11,3*visibleMaxy+3);
 		beginColor(labelColor);
 		cout<<" rest mine  :";
 		beginColor(keyColor);
@@ -395,12 +395,12 @@ void drawControl(int row,const string &label,const string &key)
 void drawMovementControls()
 {
 	int column=3*visibleMaxy+3;
-	SColor::setCursor(7,column);
+	SColor::setCursor(13,column);
 	cout<<"     ";
 	beginColor(keyColor);
 	cout<<(unicodeEnabled?"↑":"^")<<"       w";
 	endColor();
-	SColor::setCursor(8,column);
+	SColor::setCursor(14,column);
 	cout<<"   ";
 	beginColor(keyColor);
 	cout<<(unicodeEnabled?"← ↓ →":"< v >");
@@ -508,33 +508,33 @@ void drawLayout()
 	beginColor(borderColor);
 	cout<<(unicodeEnabled?"╰─────────────╯":"+-------------+");
 	endColor();
-	SColor::setCursor(6,3*visibleMaxy+3);
-	cout<<"   ";
-	beginColor(labelColor);
-	cout<<"size   :";
-	beginColor(keyColor);
-	cout<<maxx<<'x'<<maxy;
-	endColor();
 	if(boardSizeLimited)
 	{
-		SColor::setCursor(15,3*visibleMaxy+3);
+		SColor::setCursor(7,3*visibleMaxy+3);
 		cout<<"   ";
 		beginColor(failureColor);
 		cout<<(boardClipped?"warning:clipped":"warning:limited");
 		endColor();
 	}
-	SColor::setCursor(16,3*visibleMaxy+3);
+	SColor::setCursor(8,3*visibleMaxy+3);
 	cout<<"   ";
 	beginColor(labelColor);
 	cout<<"view   :";
 	beginColor(keyColor);
 	cout<<visibleMaxx<<'x'<<visibleMaxy;
 	endColor();
+	SColor::setCursor(9,3*visibleMaxy+3);
+	cout<<"   ";
+	beginColor(labelColor);
+	cout<<"size   :";
+	beginColor(keyColor);
+	cout<<maxx<<'x'<<maxy;
+	endColor();
 	drawMovementControls();
-	drawControl(9,"flag","j/f");
-	drawControl(10,"sweep","space");
-	drawControl(11,"restart","r");
-	drawControl(12,"quit","q");
+	drawControl(15,"flag","j/f");
+	drawControl(16,"sweep","space");
+	drawControl(17,"restart","r");
+	drawControl(18,"quit","q");
 	cout.flush();
 }
 
