@@ -1,5 +1,7 @@
 # cpp-minesweeper-on-shell
-![game.gif](https://github.com/kkkeQAQ/minesweeper/blob/markdown/game.gif)
+
+![minesweeper v2.0 terminal demo](minesweeper.gif)
+
 ## install
 
 	git clone https://github.com/kkkeQAQ/minesweeper --recursive
