@@ -43,7 +43,7 @@
 
 using namespace std;
 
-const string version="v1.4";
+const string version="v2.0";
 
 struct termios org_opts;
 
