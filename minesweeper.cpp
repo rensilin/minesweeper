@@ -392,6 +392,25 @@ void drawControl(int row,const string &label,const string &key)
 	endColor();
 }
 
+void drawMovementControls()
+{
+	int column=3*visibleMaxy+3;
+	SColor::setCursor(7,column);
+	cout<<"       ";
+	beginColor(keyColor);
+	cout<<(unicodeEnabled?"↑":"^")<<"       w";
+	endColor();
+	SColor::setCursor(8,column);
+	cout<<"   ";
+	beginColor(keyColor);
+	cout<<(unicodeEnabled?"← ↓ →":"< v >");
+	beginColor(labelColor);
+	cout<<" / ";
+	beginColor(keyColor);
+	cout<<"a s d";
+	endColor();
+}
+
 void drawViewportBorders()
 {
 	const char *horizontal=unicodeEnabled?"─":"-";
@@ -511,14 +530,11 @@ void drawLayout()
 	beginColor(keyColor);
 	cout<<visibleMaxx<<'x'<<visibleMaxy;
 	endColor();
-	drawControl(7,"up","w");
-	drawControl(8,"down","s");
-	drawControl(9,"left","a");
-	drawControl(10,"right","d");
-	drawControl(11,"flag","j");
-	drawControl(12,"sweep","space");
-	drawControl(13,"restart","r");
-	drawControl(14,"quit","q");
+	drawMovementControls();
+	drawControl(9,"flag","j/f");
+	drawControl(10,"sweep","space");
+	drawControl(11,"restart","r");
+	drawControl(12,"quit","q");
 	cout.flush();
 }
 
@@ -728,6 +744,7 @@ void init()
 
 bool getInput()
 {
+	int escapeState=0;
 	while(1)
 	{
 		if(terminalResized)
@@ -752,8 +769,39 @@ bool getInput()
 			if(cInput=='q')quit();
 			continue;
 		}
+		if(escapeState==1)
+		{
+			if(cInput=='['||cInput=='O')
+			{
+				escapeState=2;
+				continue;
+			}
+			escapeState=0;
+		}
+		else if(escapeState==2)
+		{
+			escapeState=0;
+			switch(cInput)
+			{
+			case 'A':
+				if(nowx>0)nowx--;
+				return true;
+			case 'B':
+				if(nowx<maxx-1)nowx++;
+				return true;
+			case 'C':
+				if(nowy<maxy-1)nowy++;
+				return true;
+			case 'D':
+				if(nowy>0)nowy--;
+				return true;
+			}
+		}
 		switch (cInput)
 		{
+		case '\033':
+			escapeState=1;
+			break;
 		case 'w':
 			if(nowx>0)nowx--;
 			return true;
@@ -766,6 +814,7 @@ bool getInput()
 		case 'd':
 			if(nowy<maxy-1)nowy++;
 			return true;
+		case 'f':
 		case 'j':
 			if(mSight[nowx][nowy])break;
 			if(mFlag[nowx][nowy]){mFlag[nowx][nowy]=false;theRestOfMine++;theRestOfSquare++;}
