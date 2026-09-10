@@ -35,11 +35,13 @@ or
 
 Both modes use one generator when you first open a cell. The mine count is
 exact, and that cell and all its neighbors are safe, so the first clue is zero.
-The default `--mode=random` returns the initial shuffled board immediately,
-without checking whether it can be solved without guessing.
+The default `--mode=no-guess` checks and repairs the board until it can be
+solved without guessing, within the generation budget. Use `--mode=random`
+to return the initial shuffled board immediately without that check.
 
 ```sh
-./minesweeper 20 20 200
+./minesweeper 20 20 100
+./minesweeper 20 20 200 --mode=random
 ```
 
 Both modes reject unsupported mine counts. At least four cells must remain
@@ -64,13 +66,13 @@ attempt, without claiming that the candidate is logically impossible to solve.
 The generator shuffles a complete board, relocates mines near a stalled clue,
 and progressively redraws the last few mine placements when repairs do not
 succeed. Every edit is checked again from the first opening. Your chosen mine
-count is preserved, and the default random mode remains available.
+count is preserved, and ordinary random mode remains available explicitly.
 
 Generation is bounded by 512 board checks, 3000 milliseconds and an internal
 work limit. Change the first two with `--max-attempts COUNT` and
-`--generation-timeout MILLISECONDS`; both require positive integers and
-`--mode=no-guess`. The first limit reached ends the attempt. Dense boards may
-exhaust the budget. In interactive play, Space retries, `r` restarts and `q`
+`--generation-timeout MILLISECONDS`; both require positive integers and work
+in the default no-guess mode. The first limit reached ends the attempt. Dense
+boards may exhaust the budget. In interactive play, Space retries, `r` restarts and `q`
 quits; while generation is running, `r` cancels and `q` quits. `--show` reports
 failure on stderr and exits unsuccessfully without printing an unchecked board.
 
@@ -84,8 +86,8 @@ terminal settings. It also works with redirected stdin/stdout. `*` is a mine,
 `.` is a zero, and `1`–`8` are clues.
 
 ```sh
-./minesweeper 20 20 200 --show --first 11,11 --seed 0
-./minesweeper 20 20 120 --show --seed 1 > board.txt
+./minesweeper 20 20 100 --show --first 11,11 --seed 0
+./minesweeper 20 20 120 --mode=random --show --seed 1 > board.txt
 ```
 
 `--first ROW,COLUMN` is 1-based. With `--show`, it defaults to the center

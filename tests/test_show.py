@@ -10,8 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 BINARY = str(ROOT / 'minesweeper')
 
 
-def run_show(rows, columns, mines, first=None, seed=0):
+def run_show(rows, columns, mines, first=None, seed=0, mode=None):
     args = [BINARY, str(rows), str(columns), str(mines), '--show', '--seed', str(seed)]
+    if mode is not None:
+        args += ['--mode', mode]
     if first:
         args += ['--first', f'{first[0]},{first[1]}']
     return subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True, text=True,
@@ -46,7 +48,7 @@ class ShowTests(unittest.TestCase):
                 (20, 20, 120), (20, 20, 200), (20, 20, 300), (20, 20, 391), (30, 31, 450)]:
             for first in [(1, 1), (rows // 2 + 1, columns // 2 + 1), (rows, columns)]:
                 with self.subTest(size=(rows, columns), mines=total, first=first):
-                    p = run_show(rows, columns, total, first)
+                    p = run_show(rows, columns, total, first, mode='random')
                     self.assertEqual(p.returncode, 0, p.stderr)
                     self.assertNotIn('\x1b', p.stdout + p.stderr)
                     audit(parse_board(p.stdout, rows, columns), rows, columns, total,
@@ -55,8 +57,8 @@ class ShowTests(unittest.TestCase):
     def test_seed_reproduction_and_diversity(self):
         layouts = set()
         for seed in (0, 1, 37, 4294967295):
-            a = run_show(20, 20, 200, seed=seed)
-            b = run_show(20, 20, 200, (11, 11), seed)
+            a = run_show(20, 20, 200, seed=seed, mode='random')
+            b = run_show(20, 20, 200, (11, 11), seed, mode='random')
             self.assertEqual(a.returncode, 0, a.stderr)
             self.assertEqual(b.returncode, 0, b.stderr)
             board = parse_board(a.stdout, 20, 20)
@@ -67,16 +69,16 @@ class ShowTests(unittest.TestCase):
     def test_capacity_depends_on_first_click_and_never_clamps_mine_count(self):
         for first, capacity in [((1, 1), 77), ((1, 5), 75), ((5, 5), 72)]:
             with self.subTest(first=first):
-                accepted = run_show(9, 9, capacity, first)
+                accepted = run_show(9, 9, capacity, first, mode='random')
                 self.assertEqual(accepted.returncode, 0, accepted.stderr)
                 audit(parse_board(accepted.stdout, 9, 9), 9, 9, capacity,
                     (first[0] - 1) * 9 + first[1] - 1)
-                rejected = run_show(9, 9, capacity + 1, first)
+                rejected = run_show(9, 9, capacity + 1, first, mode='random')
                 self.assertNotEqual(rejected.returncode, 0)
                 self.assertIn(f'1..{capacity}', rejected.stderr)
                 self.assertEqual(rejected.stdout, '')
                 self.assertNotIn('\x1b', rejected.stderr)
-        rejected = run_show(9, 9, 0, (1, 1))
+        rejected = run_show(9, 9, 0, (1, 1), mode='random')
         self.assertNotEqual(rejected.returncode, 0)
         self.assertEqual(rejected.stdout, '')
 
@@ -99,9 +101,10 @@ class ShowTests(unittest.TestCase):
         master, slave = pty.openpty()
         try:
             before = termios.tcgetattr(slave)
-            p = subprocess.run([BINARY, '--show', '--seed', '1'], stdin=slave,
+            p = subprocess.run([BINARY, '9', '9', '10', '--show', '--seed', '1'], stdin=slave,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
             self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn(b'mode=no-guess', p.stdout)
             self.assertEqual(before, termios.tcgetattr(slave))
             self.assertNotIn(b'\x1b', p.stdout + p.stderr)
         finally:
@@ -113,10 +116,11 @@ class ShowTests(unittest.TestCase):
         for rows, columns, total, first in [(20, 20, 200, (11, 11)),
                 (9, 12, 30, (1, 12)), (20, 20, 396, (20, 20))]:
             with self.subTest(size=(rows, columns), first=first):
-                printed = run_show(rows, columns, total, first, seed=0)
+                printed = run_show(rows, columns, total, first, seed=0, mode='random')
                 self.assertEqual(printed.returncode, 0, printed.stderr)
                 expected = parse_board(printed.stdout, rows, columns)
-                with TerminalGame([rows, columns, total, '--seed', '0'], rows, columns) as game:
+                with TerminalGame([rows, columns, total, '--mode=random', '--seed', '0'],
+                        rows, columns) as game:
                     # A flagged opening and cursor movement must not generate or
                     # consume RNG before the first successful open at this cell.
                     game.send('f f')

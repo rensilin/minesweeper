@@ -90,7 +90,7 @@ bool showBoard=false,seedSpecified=false;
 unsigned int boardSeed=0;
 int displayFirst=-1;
 enum GameMode { RANDOM_MODE, NO_GUESS_MODE };
-GameMode gameMode=RANDOM_MODE;
+GameMode gameMode=NO_GUESS_MODE;
 mt19937 boardRandom;
 noguess::Limits generationLimits;
 SColor defaultColor;
@@ -1065,7 +1065,7 @@ void argsParse(int argc,char **argv)
 					,{'3','H',"hard"});
 	args::Flag noMaxSize(parser,"no max size",
 					"Allow board dimensions above 100.",{"no-max-size"});
-	args::ValueFlag<string> mode(parser,"mode","Board generation: random (default) or no-guess.",{"mode"},"random");
+	args::ValueFlag<string> mode(parser,"mode","Board generation: no-guess (default) or random.",{"mode"},"no-guess");
 	args::ValueFlag<string> attempts(parser,"count","Maximum complete-board checks in no-guess mode (default: 512).",{"max-attempts"});
 	args::ValueFlag<string> timeout(parser,"milliseconds","No-guess generation time budget (default: 3000 ms).",{"generation-timeout"});
 	args::Flag show(parser,"show","Print the complete board without terminal controls, then exit.",{"show"});
@@ -1101,7 +1101,8 @@ void argsParse(int argc,char **argv)
 	}
 	string modeName=args::get(mode);
 	if(modeName=="no-guess")gameMode=NO_GUESS_MODE;
-	else if(modeName!="random")
+	else if(modeName=="random")gameMode=RANDOM_MODE;
+	else
 	{
 		cerr<<"error: --mode must be random or no-guess"<<endl;
 		exit(1);

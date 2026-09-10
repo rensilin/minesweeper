@@ -161,12 +161,13 @@ class CliTests(unittest.TestCase):
         for flag, size in [('-E', 9), ('-N', 16), ('-H', 20)]:
             with TerminalGame([flag], size, size) as game:
                 self.assertEqual(game.board().count('.'), size * size)
+                self.assertIn('mode       :no-guess', game.text())
         with TerminalGame(['--no-max-size', '101', '9', '100'], 20, 9) as game:
             self.assertIn('size       :101x9', game.text())
             self.assertIn('warning:clipped', game.text())
 
     def test_panel_alignment(self):
-        with TerminalGame([20, 20, 200, "--seed", "0"]) as game:
+        with TerminalGame([20, 20, 200, '--mode=random', "--seed", "0"]) as game:
             panel_rows = [7, 8, 9, 10, 14, 15, 16, 17]
             colons = [game.screen[row].index(':') for row in panel_rows]
             self.assertEqual(len(set(colons)), 1)
@@ -188,7 +189,7 @@ class CliTests(unittest.TestCase):
             if os.environ.get('MINESWEEPER_CAPTURE'):
                 Path(os.environ['MINESWEEPER_CAPTURE']).write_text(game.text())
     def test_mouse_clicks_and_ignored_events(self):
-        with TerminalGame([20, 20, 200, "--seed", "0"]) as game:
+        with TerminalGame([20, 20, 200, '--mode=random', "--seed", "0"]) as game:
             self.assertIn('\x1b[?1000h', game.raw_output)
             self.assertIn('\x1b[?1006h', game.raw_output)
             # Right click the padding, rather than the center character.
@@ -217,7 +218,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(game.cursor, 1)
 
     def test_mouse_border_panning_and_resize_mapping(self):
-        with TerminalGame([20, 20, 200, "--seed", "0"]) as game:
+        with TerminalGame([20, 20, 200, '--mode=random', "--seed", "0"]) as game:
             game.resize(19, 55)  # 14 rows by 10 columns, border at x=32,y=16.
             raw = game.mouse(0, 32, 8)
             self.assertNotIn('\x1b[2J', raw)
@@ -254,7 +255,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(game.board().count('@'), 3)
 
     def test_flag_before_first_open_and_restart(self):
-        with TerminalGame([20, 20, 389, "--seed", "0"]) as game:
+        with TerminalGame([20, 20, 389, '--mode=random', "--seed", "0"]) as game:
             game.send('f ')
             self.assertEqual(game.board()[0], '@')
             self.assertEqual(game.board().count('.'), 399)
@@ -272,7 +273,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(game.board()[399], ' ')
 
     def test_resize_does_not_regenerate(self):
-        with TerminalGame([20, 20, 389, "--seed", "0"]) as game:
+        with TerminalGame([20, 20, 389, '--mode=random', "--seed", "0"]) as game:
             game.send(' ')
             before = game.board()
             game.resize(19, 55)
@@ -285,12 +286,12 @@ class CliTests(unittest.TestCase):
             self.assertEqual(game.board(), before)
 
     def test_restart_and_quit_after_opening(self):
-        with TerminalGame([20, 20, 120]) as game:
+        with TerminalGame([20, 20, 120, '--mode=random']) as game:
             game.send(' r')
             self.assertEqual(game.board().count('.'), 400)
             game.send(' ')
             self.assertEqual(game.board()[0], ' ')
-        with TerminalGame([20, 20, 120]) as game:
+        with TerminalGame([20, 20, 120, '--mode=random']) as game:
             os.write(game.master, b' q')
             game.read_until(lambda: game.process.poll() is not None)
             self.assertEqual(game.process.returncode, 0)
@@ -301,7 +302,7 @@ class CliTests(unittest.TestCase):
                 with self.subTest(end_prompt=end_prompt, signal=stop_signal):
                     # A corner zero opens the four remaining safe cells at once.
                     mines = 396 if end_prompt else 120
-                    with TerminalGame([20, 20, mines, '--seed', '0']) as game:
+                    with TerminalGame([20, 20, mines, '--mode=random', '--seed', '0']) as game:
                         if end_prompt:
                             game.send(' ')
                             game.read_until(lambda: 'new game [y]  quit [q]' in game.text())
@@ -314,7 +315,7 @@ class CliTests(unittest.TestCase):
 
     def test_dense_boards_and_first_click_zero(self):
         # The center's full 3x3 protected neighborhood is the only safe region.
-        with TerminalGame([20, 20, 391]) as game:
+        with TerminalGame([20, 20, 391, '--mode=random']) as game:
             game.mouse(0, 33, 12)
             self.assertIn('you win!', game.text())
             game.mouse(0, 33, 12, release=True)
@@ -322,13 +323,13 @@ class CliTests(unittest.TestCase):
             self.assertIn('you win!', game.text())
             game.mouse(0, 11, 24)
             self.assertEqual(game.board().count('.'), 400)
-        with TerminalGame([20, 20, 120]) as game:
+        with TerminalGame([20, 20, 120, '--mode=random']) as game:
             game.batch([(210, ' ')])
             self.assertNotIn('you lose!', game.text())
             self.assertEqual(game.board()[210], ' ')
 
     def test_win_keyboard_new_game_and_quit(self):
-        with TerminalGame([20, 20, 396]) as game:
+        with TerminalGame([20, 20, 396, '--mode=random']) as game:
             game.send(' ')
             self.assertIn('you win!', game.text())
             game.send('y')
@@ -341,7 +342,7 @@ class CliTests(unittest.TestCase):
 
     def test_lose_and_new_game(self):
         # Use a seeded printed layout to deliberately hit a mine in this UI test.
-        args = [20, 20, 200, '--seed', '0', '--first', '1,1']
+        args = [20, 20, 200, '--mode=random', '--seed', '0', '--first', '1,1']
         printed = subprocess.run([BINARY, *map(str, args), '--show'],
             capture_output=True, text=True, check=True)
         cells = ' '.join(printed.stdout.splitlines()[-20:]).split()

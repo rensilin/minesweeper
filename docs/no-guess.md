@@ -6,7 +6,7 @@ preserved throughout generation. Its final `bool noGuess=true` parameter
 controls whether the initial candidate is checked and repaired. Existing
 callers keep no-guess generation by default; `--mode=random` passes `false`
 and returns immediately after the shared initial shuffle, without building
-solver constraints or running deductions. The CLI still defaults to random.
+solver constraints or running deductions. The CLI defaults to no-guess.
 
 ## Solve, repair, and retry
 

@@ -38,19 +38,22 @@ class NoGuessShowTests(unittest.TestCase):
                 self.assertEqual(board[index], '.')
                 self.assertIn('mode=no-guess', a.stdout)
 
-    def test_default_mode_matches_explicit_random(self):
-        args = [9, 12, 30, '--show', '--seed', '37', '--first', '1,12']
+    def test_default_mode_matches_explicit_no_guess_and_accepts_budgets(self):
+        args = [9, 12, 20, '--show', '--seed', '37', '--first', '5,6',
+            '--max-attempts', '512', '--generation-timeout', '5000']
         implicit = invoke(*args)
-        explicit = invoke(*args, '--mode=random')
+        explicit = invoke(*args, '--mode=no-guess')
         self.assertEqual(implicit.returncode, 0, implicit.stderr)
         self.assertEqual(explicit.returncode, 0, explicit.stderr)
+        self.assertIn('mode=no-guess', implicit.stdout)
+        self.assertIn('mode=no-guess', explicit.stdout)
         self.assertEqual(parse_board(implicit.stdout, 9, 12),
             parse_board(explicit.stdout, 9, 12))
 
     def test_both_modes_share_the_initial_candidate(self):
         # A single-mine board needs no repair, so accepting the first candidate
         # lets the executable expose whether both modes use the same shuffle.
-        random = invoke(9, 9, 1, '--show', '--seed', '37', '--first', '1,1')
+        random = invoke(9, 9, 1, '--mode=random', '--show', '--seed', '37', '--first', '1,1')
         no_guess = show(9, 9, 1, (1, 1), seed=37)
         self.assertEqual(random.returncode, 0, random.stderr)
         self.assertEqual(no_guess.returncode, 0, no_guess.stderr)
@@ -92,8 +95,9 @@ class NoGuessShowTests(unittest.TestCase):
 
 class NoGuessTerminalTests(unittest.TestCase):
     def test_short_board_preserves_help_and_clears_generation_message(self):
-        with TerminalGame([9, 9, 10, '--mode=no-guess', '--seed', '0',
+        with TerminalGame([9, 9, 10, '--seed', '0',
                 '--first', '1,1'], 9, 9) as game:
+            self.assertIn('mode       :no-guess', game.text())
             game.send(' ')
             game.read_until(lambda: game.board()[0] != '.')
             self.assertEqual(game.board()[0], ' ')
@@ -110,7 +114,7 @@ class NoGuessTerminalTests(unittest.TestCase):
         self.assertEqual(printed.returncode, 0, printed.stderr)
         expected = parse_board(printed.stdout, rows, columns)
         first_index = (first[0] - 1) * columns + first[1] - 1
-        args = [rows, columns, total, '--mode=no-guess', '--seed', '37',
+        args = [rows, columns, total, '--seed', '37',
             '--first', f'{first[0]},{first[1]}']
         with TerminalGame(args, rows, columns) as game:
             game.send('f ')
@@ -157,7 +161,7 @@ class NoGuessTerminalTests(unittest.TestCase):
         # TerminalGame.close validates both termios and mouse-mode restoration.
 
     def test_exhaustion_keeps_board_hidden_and_allows_retry_and_restart(self):
-        args = [20, 20, 200, '--mode=no-guess', '--seed', '0', '--first', '11,11',
+        args = [20, 20, 200, '--seed', '0', '--first', '11,11',
             '--max-attempts', '1', '--generation-timeout', '5000']
         with TerminalGame(args) as game:
             game.send(' ')
