@@ -33,14 +33,19 @@ or
 
 ## board generation
 
-The default `--mode=random` uses the original random mine placement. The mine count is exact; if the
-first opened cell contains a mine, that mine moves to a randomly chosen safe
-cell. The first opening is always safe, but may be a number, and later moves
-may require guessing. Mine counts are clamped to 1 through board area minus 1.
+Both modes use one generator when you first open a cell. The mine count is
+exact, and that cell and all its neighbors are safe, so the first clue is zero.
+The default `--mode=random` returns the initial shuffled board immediately,
+without checking whether it can be solved without guessing.
 
 ```sh
 ./minesweeper 20 20 200
 ```
+
+Both modes reject unsupported mine counts. At least four cells must remain
+safe for a corner opening, six for an edge, and nine for an interior opening.
+An interactive click with insufficient space shows the supported range and
+lets you choose another cell.
 
 ### no-guess mode
 
@@ -69,11 +74,8 @@ exhaust the budget. In interactive play, Space retries, `r` restarts and `q`
 quits; while generation is running, `r` cancels and `q` quits. `--show` reports
 failure on stderr and exits unsuccessfully without printing an unchecked board.
 
-No-guess mode rejects unsupported mine counts instead of clamping them. At
-least four cells must remain safe for a corner opening, six for an edge, and
-nine for an interior opening. An interactive click with insufficient space
-shows the supported range and lets you choose another cell. See
-[the generation algorithm](docs/no-guess.md) for the solver and retry policy.
+See [the generation algorithm](docs/no-guess.md) for the shared generator,
+solver and retry policy.
 
 ## print a board and exit
 
@@ -92,6 +94,8 @@ the cell you actually open receives first-click protection. `--seed` accepts
 an unsigned 32-bit integer. Using the same dimensions, mine count, seed and
 first opening reproduces the initial board on the same platform, including
 between `--show` and interactive play. Restart creates a new random board.
+Random-mode seeds now use the shared shuffle and produce different layouts
+from versions that used C `rand()` and first-click mine relocation.
 Elapsed time in the output is not expected to be reproducible.
 No-guess mode also requires the same generation limits; the wall-clock limit
 can stop generation sooner on a slower machine. `--show` reports its mode and

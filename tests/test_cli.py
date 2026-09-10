@@ -175,7 +175,7 @@ class CliTests(unittest.TestCase):
             # All four title-box right edges share the same column.
             self.assertEqual([game.screen[row][79] for row in [1, 2, 3, 4]], ['+', '|', '|', '+'])
             game.batch([(210, ' ')])
-            self.assertIn(game.board()[210], ' 012345678')
+            self.assertEqual(game.board()[210], ' ')
             first_board = game.board()
             game.resize(19, 55)
             self.assertIn('warning:clipped', game.text())
@@ -183,7 +183,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(game.board(), first_board)
             game.send('r')
             game.batch([(210, ' ')])
-            self.assertIn(game.board()[210], ' 012345678')
+            self.assertEqual(game.board()[210], ' ')
             # Capture the real rendered terminal for visual review.
             if os.environ.get('MINESWEEPER_CAPTURE'):
                 Path(os.environ['MINESWEEPER_CAPTURE']).write_text(game.text())
@@ -203,7 +203,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(game.board().count('.'), 399)
             game.mouse(2, 34, 12)
             game.mouse(0, 33, 12)
-            self.assertIn(game.board()[210], ' 012345678')
+            self.assertEqual(game.board()[210], ' ')
             before = game.board()
             game.mouse(0, 33, 12, release=True)
             game.mouse(2, 33, 12)
@@ -260,7 +260,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(game.board().count('.'), 399)
             game.send('f')
             game.batch([(210, ' ')])
-            self.assertIn(game.board()[210], ' 012345678')
+            self.assertEqual(game.board()[210], ' ')
             before = game.board()
             raw = game.send('\x1b[C')
             self.assertNotIn('\x1b[2J', raw)
@@ -269,7 +269,7 @@ class CliTests(unittest.TestCase):
             game.send('r')
             self.assertEqual(game.board().count('.'), 400)
             game.batch([(399, ' ')])
-            self.assertIn(game.board()[399], ' 012345678')
+            self.assertEqual(game.board()[399], ' ')
 
     def test_resize_does_not_regenerate(self):
         with TerminalGame([20, 20, 389, "--seed", "0"]) as game:
@@ -289,7 +289,7 @@ class CliTests(unittest.TestCase):
             game.send(' r')
             self.assertEqual(game.board().count('.'), 400)
             game.send(' ')
-            self.assertIn(game.board()[0], ' 012345678')
+            self.assertEqual(game.board()[0], ' ')
         with TerminalGame([20, 20, 120]) as game:
             os.write(game.master, b' q')
             game.read_until(lambda: game.process.poll() is not None)
@@ -299,7 +299,8 @@ class CliTests(unittest.TestCase):
         for end_prompt in (False, True):
             for stop_signal in (signal.SIGINT, signal.SIGTERM):
                 with self.subTest(end_prompt=end_prompt, signal=stop_signal):
-                    mines = 399 if end_prompt else 120
+                    # A corner zero opens the four remaining safe cells at once.
+                    mines = 396 if end_prompt else 120
                     with TerminalGame([20, 20, mines, '--seed', '0']) as game:
                         if end_prompt:
                             game.send(' ')
@@ -311,8 +312,9 @@ class CliTests(unittest.TestCase):
                         self.assertIn('\x1b[?1006l', game.raw_output)
                         # TerminalGame.close also checks the original termios state.
 
-    def test_dense_boards_and_first_click_safety(self):
-        with TerminalGame([20, 20, 399]) as game:
+    def test_dense_boards_and_first_click_zero(self):
+        # The center's full 3x3 protected neighborhood is the only safe region.
+        with TerminalGame([20, 20, 391]) as game:
             game.mouse(0, 33, 12)
             self.assertIn('you win!', game.text())
             game.mouse(0, 33, 12, release=True)
@@ -323,10 +325,10 @@ class CliTests(unittest.TestCase):
         with TerminalGame([20, 20, 120]) as game:
             game.batch([(210, ' ')])
             self.assertNotIn('you lose!', game.text())
-            self.assertIn(game.board()[210], ' 012345678')
+            self.assertEqual(game.board()[210], ' ')
 
     def test_win_keyboard_new_game_and_quit(self):
-        with TerminalGame([20, 20, 399]) as game:
+        with TerminalGame([20, 20, 396]) as game:
             game.send(' ')
             self.assertIn('you win!', game.text())
             game.send('y')

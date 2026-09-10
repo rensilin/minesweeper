@@ -387,7 +387,8 @@ Deductions deduce(int rows,int columns,int mineCount,const std::vector<int> &vis
 }
 
 Generation generate(int rows,int columns,int mineCount,int firstCell,
-	std::mt19937 &rng,const std::function<bool()> &keepRunning,const Limits &limits)
+	std::mt19937 &rng,const std::function<bool()> &keepRunning,const Limits &limits,
+	bool noGuess)
 {
 	Generation result;
 	result.status=UNSUPPORTED;
@@ -401,9 +402,9 @@ Generation generate(int rows,int columns,int mineCount,int firstCell,
 	try
 	{
 		budget.check();
-		if(!limits.maxAttempts||static_cast<std::size_t>(area)>limits.maxWork/12)
+		if((noGuess&&!limits.maxAttempts)
+			||static_cast<std::size_t>(area)>limits.maxWork/(noGuess?12:1))
 			throw Stopped(EXHAUSTED);
-		Neighbors neighbors=neighborsFor(rows,columns,budget);
 		Cells pool,position(area,-1);
 		std::vector<bool> mines(area,false);
 		for(int cell=0;cell<area;cell++)
@@ -418,6 +419,14 @@ Generation generate(int rows,int columns,int mineCount,int firstCell,
 		}
 		redraw(0,mineCount,pool,position,mines,rng,budget);
 		result.stats.fullShuffles++;
+		if(!noGuess)
+		{
+			budget.check();
+			result.status=GENERATED;
+			result.mines.swap(mines);
+			return result;
+		}
+		Neighbors neighbors=neighborsFor(rows,columns,budget);
 		unsigned repairsThisRound=0;
 		int suffixDepth=1;
 		for(unsigned attempt=0;attempt<limits.maxAttempts;attempt++)

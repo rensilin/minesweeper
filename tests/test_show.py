@@ -29,6 +29,7 @@ def parse_board(output, rows, columns):
 def audit(flat, rows, columns, total, first):
     mines = {p for p, value in enumerate(flat) if value == '*'}
     assert len(mines) == total and first not in mines
+    assert flat[first] == '.', 'first click must be a zero'
     for p, value in enumerate(flat):
         if p in mines:
             continue
@@ -40,9 +41,9 @@ def audit(flat, rows, columns, total, first):
 
 
 class ShowTests(unittest.TestCase):
-    def test_show_is_plain_and_preserves_counts_and_first_safety(self):
-        for rows, columns, total in [(9, 9, 1), (9, 9, 80), (16, 16, 30),
-                (20, 20, 120), (20, 20, 200), (20, 20, 300), (20, 20, 399), (30, 31, 450)]:
+    def test_show_is_plain_and_preserves_counts_and_first_zero(self):
+        for rows, columns, total in [(9, 9, 1), (9, 9, 72), (16, 16, 30),
+                (20, 20, 120), (20, 20, 200), (20, 20, 300), (20, 20, 391), (30, 31, 450)]:
             for first in [(1, 1), (rows // 2 + 1, columns // 2 + 1), (rows, columns)]:
                 with self.subTest(size=(rows, columns), mines=total, first=first):
                     p = run_show(rows, columns, total, first)
@@ -61,8 +62,23 @@ class ShowTests(unittest.TestCase):
             board = parse_board(a.stdout, 20, 20)
             self.assertEqual(board, parse_board(b.stdout, 20, 20))
             layouts.add(tuple(board))
-        # C rand may map distinct seeds to the same sequence.
         self.assertGreater(len(layouts), 1)
+
+    def test_capacity_depends_on_first_click_and_never_clamps_mine_count(self):
+        for first, capacity in [((1, 1), 77), ((1, 5), 75), ((5, 5), 72)]:
+            with self.subTest(first=first):
+                accepted = run_show(9, 9, capacity, first)
+                self.assertEqual(accepted.returncode, 0, accepted.stderr)
+                audit(parse_board(accepted.stdout, 9, 9), 9, 9, capacity,
+                    (first[0] - 1) * 9 + first[1] - 1)
+                rejected = run_show(9, 9, capacity + 1, first)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn(f'1..{capacity}', rejected.stderr)
+                self.assertEqual(rejected.stdout, '')
+                self.assertNotIn('\x1b', rejected.stderr)
+        rejected = run_show(9, 9, 0, (1, 1))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertEqual(rejected.stdout, '')
 
     def test_argument_errors(self):
         for args in [('--first', '0,1'), ('--first', '21,1'), ('--first', '1,1x'),
@@ -93,16 +109,19 @@ class ShowTests(unittest.TestCase):
             os.close(slave)
 
     def test_interactive_board_matches_show(self):
-        # Open every safe cell to check the whole layout, including relocation.
+        # Open every safe cell to compare the complete first-click-generated layout.
         for rows, columns, total, first in [(20, 20, 200, (11, 11)),
-                (9, 12, 30, (1, 12)), (20, 20, 399, (20, 20))]:
+                (9, 12, 30, (1, 12)), (20, 20, 396, (20, 20))]:
             with self.subTest(size=(rows, columns), first=first):
                 printed = run_show(rows, columns, total, first, seed=0)
                 self.assertEqual(printed.returncode, 0, printed.stderr)
                 expected = parse_board(printed.stdout, rows, columns)
-                with TerminalGame([rows, columns, total, '--seed', '0', '--first',
-                        f'{first[0]},{first[1]}'], rows, columns) as game:
-                    game.send(' ')
+                with TerminalGame([rows, columns, total, '--seed', '0'], rows, columns) as game:
+                    # A flagged opening and cursor movement must not generate or
+                    # consume RNG before the first successful open at this cell.
+                    game.send('f f')
+                    self.assertEqual(game.board().count('.'), rows * columns)
+                    game.batch([((first[0] - 1) * columns + first[1] - 1, ' ')])
                     for cell, value in enumerate(expected):
                         if value != '*' and game.board()[cell] == '.':
                             game.batch([(cell, ' ')])

@@ -238,6 +238,52 @@ void testRepairAndRedrawBudgets()
 			assert(!repaired.mines[row*20+column]);
 }
 
+void testRandomModeSkipsNoGuessSearch()
+{
+	noguess::Limits limits;
+	limits.maxMillis=30000;
+	bool foundAmbiguous=false,foundFirstAttempt=false;
+	for(unsigned seed=0;seed<256&&(!foundAmbiguous||!foundFirstAttempt);seed++)
+	{
+		std::mt19937 randomRng(seed),noGuessRng(seed),explicitRng(seed);
+		// Zero attempts disables the search, but must not prevent random output.
+		limits.maxAttempts=0;
+		const noguess::Generation random=noguess::generate(1,5,2,0,randomRng,{},limits,false);
+		assert(random.status==noguess::GENERATED);
+		assert(random.stats.attempts==0&&random.stats.repairs==0);
+		assert(random.stats.suffixResamples==0&&random.stats.fullShuffles==1);
+		if(!independentlySolvable(1,5,2,0,random.mines))foundAmbiguous=true;
+
+		limits.maxAttempts=512;
+		// Omitting the new bool retains the no-guess guarantee and matches true.
+		const noguess::Generation implicit=noguess::generate(1,5,2,0,noGuessRng,{},limits);
+		const noguess::Generation explicitTrue=noguess::generate(1,5,2,0,explicitRng,{},limits,true);
+		assert(implicit.status==noguess::GENERATED);
+		assert(implicit.mines==explicitTrue.mines&&implicit.status==explicitTrue.status);
+		assert(noGuessRng==explicitRng);
+		assert(independentlySolvable(1,5,2,0,implicit.mines));
+		if(implicit.stats.attempts==1)
+		{
+			foundFirstAttempt=true;
+			assert(implicit.mines==random.mines);
+			assert(noGuessRng==randomRng);
+		}
+	}
+	// Search seeds rather than hard-code a library-specific shuffled layout.
+	assert(foundAmbiguous&&foundFirstAttempt);
+	for(int stop=0;stop<3;stop++)
+	{
+		std::mt19937 rng(0);
+		noguess::Limits stopped;
+		if(stop==0)stopped.maxWork=0;
+		if(stop==1)stopped.maxMillis=0;
+		const noguess::Generation result=noguess::generate(3,4,2,3,rng,
+			[stop] { return stop!=2; },stopped,false);
+		assert(result.status==(stop==2?noguess::CANCELLED:noguess::EXHAUSTED));
+		assert(result.mines.empty());
+	}
+}
+
 void testFailureStatuses()
 {
 	const auto status=[](const noguess::Generation &result,noguess::GenerationStatus expected)
@@ -274,6 +320,7 @@ int main()
 	testInvalidObservations();
 	testGeneratedBoardsAndDeterminism();
 	testRepairAndRedrawBudgets();
+	testRandomModeSkipsNoGuessSearch();
 	testFailureStatuses();
 	std::cout<<"no-guess oracle and generation tests passed\n";
 }

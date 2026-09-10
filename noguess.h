@@ -50,16 +50,18 @@ struct Generation
 Deductions deduce(int rows,int columns,int mineCount,
 	const std::vector<int> &visible);
 
-// Only GENERATED carries a board. It has exactly mineCount mines, a zero first
-// click, and a complete solution verified anew using public information.
-// The other statuses carry an empty board. UNSUPPORTED means invalid parameters
-// or insufficient space outside the first-click neighborhood. Zero attempt,
-// time or work budgets immediately exhaust the search. An empty callback keeps
-// running; otherwise false requests cancellation. This is a heuristic search,
-// with no uniformity or completeness guarantee.
+// Only GENERATED carries a board, with exactly mineCount mines and a zero first
+// click. With noGuess=true it also has a complete solution verified anew using
+// public information. With noGuess=false the same initial random candidate is
+// returned without solving; attempts stays zero and maxAttempts is ignored.
+// Other statuses carry an empty board. UNSUPPORTED means invalid parameters or
+// insufficient space outside the first-click neighborhood. Zero time or work
+// budgets exhaust both modes; zero attempts exhausts only noGuess=true. An empty
+// callback keeps running; otherwise false requests cancellation. No-guess
+// search has no uniformity or completeness guarantee.
 Generation generate(int rows,int columns,int mineCount,int firstCell,
 	std::mt19937 &rng,const std::function<bool()> &keepRunning,
-	const Limits &limits=Limits());
+	const Limits &limits=Limits(),bool noGuess=true);
 }
 
 #endif

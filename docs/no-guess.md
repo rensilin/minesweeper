@@ -1,8 +1,12 @@
-# No-guess generation
+# Board generation
 
-`--mode=no-guess` generates a complete board for the actual first opening.
+Both modes call `noguess::generate` for the actual first opening.
 The first cell and all its neighbors are safe. The requested mine count is
-preserved throughout generation. Ordinary random boards remain the default.
+preserved throughout generation. Its final `bool noGuess=true` parameter
+controls whether the initial candidate is checked and repaired. Existing
+callers keep no-guess generation by default; `--mode=random` passes `false`
+and returns immediately after the shared initial shuffle, without building
+solver constraints or running deductions. The CLI still defaults to random.
 
 ## Solve, repair, and retry
 
@@ -40,15 +44,19 @@ this validation; incorrect user flags can still obstruct play afterwards.
 ## Limits and cancellation
 
 One generation call defaults to 512 candidate checks, 3000 ms and 20,000,000
-work units. Work and elapsed time cover the entire call, including deductions,
+work units. With `noGuess=false`, there are no candidate checks, so the attempt
+limit is ignored; time, work and cancellation still bound the initial shuffle.
+Work and elapsed time cover the entire call, including deductions,
 repairs and reshuffles. These are practical limits, not a polynomial-time or
 guaranteed-success claim. There is no uniform-sampling guarantee or additional
 filter for trivial layouts.
 
 The attempt and time limits can be set with `--max-attempts` and
 `--generation-timeout`. A cancelled, exhausted or unsupported generation
-returns no mine layout. Interactive generation processes quit, cancellation,
-termination signals and terminal resizing through its cancellation callback.
+returns no mine layout. Interactive no-guess generation processes quit and
+cancellation keys through its callback. Random generation leaves queued keys
+for normal gameplay after the shuffle. Both modes check termination signals
+and terminal resizing during generation.
 
 ## Related implementation
 

@@ -38,7 +38,7 @@ class NoGuessShowTests(unittest.TestCase):
                 self.assertEqual(board[index], '.')
                 self.assertIn('mode=no-guess', a.stdout)
 
-    def test_default_random_mode_is_unchanged(self):
+    def test_default_mode_matches_explicit_random(self):
         args = [9, 12, 30, '--show', '--seed', '37', '--first', '1,12']
         implicit = invoke(*args)
         explicit = invoke(*args, '--mode=random')
@@ -46,6 +46,16 @@ class NoGuessShowTests(unittest.TestCase):
         self.assertEqual(explicit.returncode, 0, explicit.stderr)
         self.assertEqual(parse_board(implicit.stdout, 9, 12),
             parse_board(explicit.stdout, 9, 12))
+
+    def test_both_modes_share_the_initial_candidate(self):
+        # A single-mine board needs no repair, so accepting the first candidate
+        # lets the executable expose whether both modes use the same shuffle.
+        random = invoke(9, 9, 1, '--show', '--seed', '37', '--first', '1,1')
+        no_guess = show(9, 9, 1, (1, 1), seed=37)
+        self.assertEqual(random.returncode, 0, random.stderr)
+        self.assertEqual(no_guess.returncode, 0, no_guess.stderr)
+        self.assertIn('attempts=1', no_guess.stdout)
+        self.assertEqual(parse_board(random.stdout, 9, 9), parse_board(no_guess.stdout, 9, 9))
 
     def test_invalid_arguments_fail_before_entering_terminal_mode(self):
         invalid = [('--mode=unknown',), ('--mode=',),
@@ -163,15 +173,17 @@ class NoGuessTerminalTests(unittest.TestCase):
             self.assertNotIn('No-guess budget exhausted', game.text())
 
     def test_infeasible_first_cell_leaves_game_available(self):
-        with TerminalGame([9, 9, 73, '--mode=no-guess', '--first', '5,5'], 9, 9) as game:
-            game.send(' ')
-            self.assertIn('First zero supports 1..72', game.text())
-            self.assertEqual(game.board().count('.'), 81)
-            self.assertIsNone(game.process.poll())
-            game.batch([(0, ' ')])
-            game.read_until(lambda: game.board()[0] != '.' or 'budget exhausted' in game.text())
-            self.assertNotIn('choose another cell', game.text())
-            self.assertNotIn('you lose!', game.text())
+        for mode in ('random', 'no-guess'):
+            with self.subTest(mode=mode), TerminalGame([9, 9, 73, f'--mode={mode}',
+                    '--first', '5,5'], 9, 9) as game:
+                game.send(' ')
+                self.assertIn('First zero supports 1..72', game.text())
+                self.assertEqual(game.board().count('.'), 81)
+                self.assertIsNone(game.process.poll())
+                game.batch([(0, ' ')])
+                game.read_until(lambda: game.board()[0] != '.' or 'budget exhausted' in game.text())
+                self.assertNotIn('choose another cell', game.text())
+                self.assertNotIn('you lose!', game.text())
 
     def test_resize_and_termination_during_generation(self):
         args = [20, 20, 200, '--mode=no-guess', '--seed', '0', '--first', '11,11']
