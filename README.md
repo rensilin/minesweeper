@@ -68,12 +68,16 @@ and progressively redraws the last few mine placements when repairs do not
 succeed. Every edit is checked again from the first opening. Your chosen mine
 count is preserved, and ordinary random mode remains available explicitly.
 
-Generation is bounded by 512 board checks, 3000 milliseconds and an internal
-work limit. Change the first two with `--max-attempts COUNT` and
-`--generation-timeout MILLISECONDS`; both require positive integers and work
-in the default no-guess mode. The first limit reached ends the attempt. Dense
-boards may exhaust the budget. In interactive play, Space retries, `r` restarts and `q`
-quits; while generation is running, `r` cancels and `q` quits. `--show` reports
+Generation has only a time limit, defaulting to 3000 milliseconds. There is no
+attempt-count or work-count limit. Set `--generation-timeout MILLISECONDS` to a
+positive integer to change the deadline in either mode. For example, allow ten seconds:
+
+```sh
+./minesweeper 20 20 200 --generation-timeout 10000
+```
+
+Dense boards may time out. In interactive play, Space retries, `r` restarts and
+`q` quits; while no-guess generation is running, `r` cancels and `q` quits. `--show` reports
 failure on stderr and exits unsuccessfully without printing an unchecked board.
 
 See [the generation algorithm](docs/no-guess.md) for the shared generator,
@@ -99,7 +103,7 @@ between `--show` and interactive play. Restart creates a new random board.
 Random-mode seeds now use the shared shuffle and produce different layouts
 from versions that used C `rand()` and first-click mine relocation.
 Elapsed time in the output is not expected to be reproducible.
-No-guess mode also requires the same generation limits; the wall-clock limit
+No-guess mode also requires the same timeout; the wall-clock limit
 can stop generation sooner on a slower machine. `--show` reports its mode and
 number of board checks in the header when no-guess generation succeeds.
 

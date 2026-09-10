@@ -43,16 +43,18 @@ this validation; incorrect user flags can still obstruct play afterwards.
 
 ## Limits and cancellation
 
-One generation call defaults to 512 candidate checks, 3000 ms and 20,000,000
-work units. With `noGuess=false`, there are no candidate checks, so the attempt
-limit is ignored; time, work and cancellation still bound the initial shuffle.
-Work and elapsed time cover the entire call, including deductions,
-repairs and reshuffles. These are practical limits, not a polynomial-time or
-guaranteed-success claim. There is no uniform-sampling guarantee or additional
-filter for trivial layouts.
+One generation call has only a time budget, defaulting to 3000 ms. It continues
+checking and repairing candidates until one succeeds, time runs out, or the
+caller cancels. Attempt and work counts are diagnostics and never stop search.
+Elapsed time covers the entire call, including the initial shuffle, deductions,
+repairs and reshuffles. The deadline is checked throughout those operations.
+With `noGuess=false`, the same deadline applies to the initial shuffle.
+The per-round limit of 12 repairs still determines when to resample a suffix;
+it does not terminate generation. There is no guaranteed-success or
+uniform-sampling claim, or additional filter for trivial layouts.
 
-The attempt and time limits can be set with `--max-attempts` and
-`--generation-timeout`. A cancelled, exhausted or unsupported generation
+Set the time limit with `--generation-timeout MILLISECONDS` (positive integer,
+either mode). A cancelled, exhausted or unsupported generation
 returns no mine layout. Interactive no-guess generation processes quit and
 cancellation keys through its callback. Random generation leaves queued keys
 for normal gameplay after the shuffle. Both modes check termination signals

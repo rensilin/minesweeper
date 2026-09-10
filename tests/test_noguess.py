@@ -38,9 +38,9 @@ class NoGuessShowTests(unittest.TestCase):
                 self.assertEqual(board[index], '.')
                 self.assertIn('mode=no-guess', a.stdout)
 
-    def test_default_mode_matches_explicit_no_guess_and_accepts_budgets(self):
+    def test_default_mode_matches_explicit_no_guess_and_accepts_timeout(self):
         args = [9, 12, 20, '--show', '--seed', '37', '--first', '5,6',
-            '--max-attempts', '512', '--generation-timeout', '5000']
+            '--generation-timeout', '5000']
         implicit = invoke(*args)
         explicit = invoke(*args, '--mode=no-guess')
         self.assertEqual(implicit.returncode, 0, implicit.stderr)
@@ -53,7 +53,8 @@ class NoGuessShowTests(unittest.TestCase):
     def test_both_modes_share_the_initial_candidate(self):
         # A single-mine board needs no repair, so accepting the first candidate
         # lets the executable expose whether both modes use the same shuffle.
-        random = invoke(9, 9, 1, '--mode=random', '--show', '--seed', '37', '--first', '1,1')
+        random = invoke(9, 9, 1, '--mode=random', '--show', '--seed', '37', '--first', '1,1',
+            '--generation-timeout', '5000')
         no_guess = show(9, 9, 1, (1, 1), seed=37)
         self.assertEqual(random.returncode, 0, random.stderr)
         self.assertEqual(no_guess.returncode, 0, no_guess.stderr)
@@ -61,12 +62,9 @@ class NoGuessShowTests(unittest.TestCase):
         self.assertEqual(parse_board(random.stdout, 9, 9), parse_board(no_guess.stdout, 9, 9))
 
     def test_invalid_arguments_fail_before_entering_terminal_mode(self):
-        invalid = [('--mode=unknown',), ('--mode=',),
-            ('--mode=random', '--max-attempts', '1'),
-            ('--mode=random', '--generation-timeout', '1')]
-        for flag in ('--max-attempts', '--generation-timeout'):
-            for value in ('0', '-1', '1x', '2147483648'):
-                invalid.append(('--mode=no-guess', flag, value))
+        invalid = [('--mode=unknown',), ('--mode=',), ('--max-attempts', '512')]
+        for value in ('0', '-1', '1x', '2147483648'):
+            invalid.append(('--generation-timeout', value))
         for args in invalid:
             with self.subTest(args=args):
                 result = invoke(9, 9, 10, '--show', *args)
@@ -83,12 +81,13 @@ class NoGuessShowTests(unittest.TestCase):
         self.assertNotEqual(infeasible.returncode, 0)
         self.assertIn('first zero supports 1..72', infeasible.stderr)
         self.assertEqual(infeasible.stdout, '')
-        # A complete-board attempt budget gives a deterministic failure, without
-        # relying on a narrow timing threshold or assuming all densities work.
+        # A short configured deadline exercises timeout without waiting for the
+        # default three seconds; the C++ test checks continued search past 512.
         exhausted = show(20, 20, 200, (11, 11), extra=(
-            '--max-attempts', '1', '--generation-timeout', '5000'))
+            '--generation-timeout', '1'))
         self.assertNotEqual(exhausted.returncode, 0)
-        self.assertIn('budget exhausted after 1 attempts', exhausted.stderr)
+        self.assertIn('timed out after 1 ms', exhausted.stderr)
+        self.assertIn('--generation-timeout', exhausted.stderr)
         self.assertEqual(exhausted.stdout, '')
         self.assertNotIn('\x1b', infeasible.stderr + exhausted.stderr)
 
@@ -162,19 +161,19 @@ class NoGuessTerminalTests(unittest.TestCase):
 
     def test_exhaustion_keeps_board_hidden_and_allows_retry_and_restart(self):
         args = [20, 20, 200, '--seed', '0', '--first', '11,11',
-            '--max-attempts', '1', '--generation-timeout', '5000']
+            '--generation-timeout', '1']
         with TerminalGame(args) as game:
             game.send(' ')
-            game.read_until(lambda: 'No-guess budget exhausted' in game.text())
+            game.read_until(lambda: 'No-guess timed out' in game.text())
             self.assertEqual(game.board().count('.'), 400)
             generated_messages = game.raw_output.count('Generating no-guess')
             game.send(' ')
             game.read_until(lambda: game.raw_output.count('Generating no-guess') > generated_messages)
-            game.read_until(lambda: 'No-guess budget exhausted' in game.text())
+            game.read_until(lambda: 'No-guess timed out' in game.text())
             self.assertEqual(game.board().count('.'), 400)
             game.send('r')
             self.assertEqual(game.board().count('.'), 400)
-            self.assertNotIn('No-guess budget exhausted', game.text())
+            self.assertNotIn('No-guess timed out', game.text())
 
     def test_infeasible_first_cell_leaves_game_available(self):
         for mode in ('random', 'no-guess'):
@@ -185,7 +184,7 @@ class NoGuessTerminalTests(unittest.TestCase):
                 self.assertEqual(game.board().count('.'), 81)
                 self.assertIsNone(game.process.poll())
                 game.batch([(0, ' ')])
-                game.read_until(lambda: game.board()[0] != '.' or 'budget exhausted' in game.text())
+                game.read_until(lambda: game.board()[0] != '.' or 'timed out' in game.text())
                 self.assertNotIn('choose another cell', game.text())
                 self.assertNotIn('you lose!', game.text())
 

@@ -727,7 +727,7 @@ bool generateFirstBoard(int row,int column)
 		}
 		if(generated.status!=noguess::GENERATED)
 		{
-			showGenerationMessage(failurePrefix+" budget exhausted; Space:retry r:restart q:quit");
+			showGenerationMessage(failurePrefix+" timed out; Space:retry r:restart q:quit");
 			return false;
 		}
 		for(int r=0;r<maxx;r++)
@@ -1066,8 +1066,7 @@ void argsParse(int argc,char **argv)
 	args::Flag noMaxSize(parser,"no max size",
 					"Allow board dimensions above 100.",{"no-max-size"});
 	args::ValueFlag<string> mode(parser,"mode","Board generation: no-guess (default) or random.",{"mode"},"no-guess");
-	args::ValueFlag<string> attempts(parser,"count","Maximum complete-board checks in no-guess mode (default: 512).",{"max-attempts"});
-	args::ValueFlag<string> timeout(parser,"milliseconds","No-guess generation time budget (default: 3000 ms).",{"generation-timeout"});
+	args::ValueFlag<string> timeout(parser,"milliseconds","Maximum generation time in milliseconds (default: 3000).",{"generation-timeout"});
 	args::Flag show(parser,"show","Print the complete board without terminal controls, then exit.",{"show"});
 	args::ValueFlag<string> first(parser,"row,column","1-based first click for --show (default: center); initial cursor otherwise.",{"first"});
 	args::ValueFlag<string> seed(parser,"seed","Unsigned 32-bit seed for reproducible random generation.",{"seed"});
@@ -1107,13 +1106,8 @@ void argsParse(int argc,char **argv)
 		cerr<<"error: --mode must be random or no-guess"<<endl;
 		exit(1);
 	}
-	if(attempts||timeout)
+	if(timeout)
 	{
-		if(gameMode!=NO_GUESS_MODE)
-		{
-			cerr<<"error: generation limits require --mode=no-guess"<<endl;
-			exit(1);
-		}
 		auto positiveLimit=[](const string &value,const string &option)
 		{
 			unsigned parsed=0,maximum=static_cast<unsigned>(numeric_limits<int>::max());
@@ -1134,8 +1128,7 @@ void argsParse(int argc,char **argv)
 			}
 			return parsed;
 		};
-		if(attempts)generationLimits.maxAttempts=positiveLimit(args::get(attempts),"--max-attempts");
-		if(timeout)generationLimits.maxMillis=positiveLimit(args::get(timeout),"--generation-timeout");
+		generationLimits.maxMillis=positiveLimit(args::get(timeout),"--generation-timeout");
 	}
 	if(easy)difficulty=easyV;
 	else if(normal)difficulty=normalV;
@@ -1210,8 +1203,8 @@ int printBoardAndExit()
 		if(generated.status!=noguess::GENERATED)
 		{
 			cerr<<"error: "<<(gameMode==NO_GUESS_MODE?"no-guess ":"")
-				<<"generation budget exhausted after "<<generated.stats.attempts
-				<<" attempts; try fewer mines or a smaller board"<<endl;
+				<<"generation timed out after "<<generationLimits.maxMillis<<" ms ("
+				<<generated.stats.attempts<<" checks); increase --generation-timeout to allow more time"<<endl;
 			return 1;
 		}
 		const vector<bool> &mines=generated.mines;

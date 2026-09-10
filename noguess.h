@@ -12,10 +12,8 @@ enum GenerationStatus { GENERATED, CANCELLED, EXHAUSTED, UNSUPPORTED };
 
 struct Limits
 {
-	unsigned maxAttempts;
 	unsigned repairsPerRound;
 	unsigned maxMillis;
-	std::size_t maxWork;
 	Limits();
 };
 
@@ -53,12 +51,13 @@ Deductions deduce(int rows,int columns,int mineCount,
 // Only GENERATED carries a board, with exactly mineCount mines and a zero first
 // click. With noGuess=true it also has a complete solution verified anew using
 // public information. With noGuess=false the same initial random candidate is
-// returned without solving; attempts stays zero and maxAttempts is ignored.
+// returned without solving; attempts stays zero.
 // Other statuses carry an empty board. UNSUPPORTED means invalid parameters or
-// insufficient space outside the first-click neighborhood. Zero time or work
-// budgets exhaust both modes; zero attempts exhausts only noGuess=true. An empty
-// callback keeps running; otherwise false requests cancellation. No-guess
-// search has no uniformity or completeness guarantee.
+// insufficient space outside the first-click neighborhood. Both modes use only
+// a time budget (default 3000 ms); zero time immediately exhausts it. Attempt and
+// work counts are statistics, not limits. An empty callback keeps running;
+// otherwise false requests cancellation. No-guess search has no uniformity or
+// completeness guarantee.
 Generation generate(int rows,int columns,int mineCount,int firstCell,
 	std::mt19937 &rng,const std::function<bool()> &keepRunning,
 	const Limits &limits=Limits(),bool noGuess=true);

@@ -5,7 +5,7 @@ _minesweeper_comp()
 	cur="${COMP_WORDS[COMP_CWORD]}"
 	prev="${COMP_WORDS[COMP_CWORD-1]}"
 	opt="h v E N H --"
-	opts="--help --version --easy --normal --hard --no-max-size --show --seed --first --mode --max-attempts --generation-timeout"
+	opts="--help --version --easy --normal --hard --no-max-size --show --seed --first --mode --generation-timeout"
 	if [[ ${prev} == --mode ]]; then
 		COMPREPLY=( $(compgen -W "random no-guess" -- "${cur}") )
 		return 0

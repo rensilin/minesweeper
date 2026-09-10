@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <climits>
+#include <chrono>
 #include <iostream>
 #include <random>
 #include <stdexcept>
@@ -210,27 +211,30 @@ void testGeneratedBoardsAndDeterminism()
 	assert(independentlySolvable(1,5,2,0,{false,false,false,true,true}));
 }
 
-void testRepairAndRedrawBudgets()
+void testRepairAndTimeBudget()
 {
 	noguess::Limits limits;
-	limits.maxMillis=30000;
+	limits.maxMillis=100;
 	limits.repairsPerRound=0;
-	limits.maxAttempts=100;
 	std::mt19937 exhaustedRng(0);
-	const noguess::Generation exhausted=noguess::generate(9,9,50,40,exhaustedRng,{},limits);
+	// Odd mine count on two rows leaves an indistinguishable vertical pair.
+	// This small unsolvable family keeps searching until the actual deadline.
+	const auto started=std::chrono::steady_clock::now();
+	const noguess::Generation exhausted=noguess::generate(2,7,3,3,exhaustedRng,{},limits);
+	const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now()-started).count();
 	assert(exhausted.status==noguess::EXHAUSTED&&exhausted.mines.empty());
-	assert(exhausted.stats.attempts==limits.maxAttempts);
+	assert(elapsed>=limits.maxMillis&&elapsed<5000);
+	assert(exhausted.stats.attempts>512);
 	assert(exhausted.stats.repairs==0);
 	assert(exhausted.stats.suffixResamples>0&&exhausted.stats.fullShuffles>1);
-	assert(exhausted.stats.work<=limits.maxWork);
 
+	limits.maxMillis=30000;
 	limits.repairsPerRound=12;
-	limits.maxAttempts=512;
 	std::mt19937 repairRng(0);
 	const noguess::Generation repaired=noguess::generate(20,20,100,210,repairRng,{},limits);
 	assert(repaired.status==noguess::GENERATED);
 	assert(repaired.stats.repairs>0&&repaired.stats.suffixResamples>0);
-	assert(repaired.stats.attempts<=limits.maxAttempts&&repaired.stats.work<=limits.maxWork);
 	assert(repaired.mines.size()==400);
 	assert(std::count(repaired.mines.begin(),repaired.mines.end(),true)==100);
 	for(int row=9;row<=11;row++)
@@ -246,15 +250,12 @@ void testRandomModeSkipsNoGuessSearch()
 	for(unsigned seed=0;seed<256&&(!foundAmbiguous||!foundFirstAttempt);seed++)
 	{
 		std::mt19937 randomRng(seed),noGuessRng(seed),explicitRng(seed);
-		// Zero attempts disables the search, but must not prevent random output.
-		limits.maxAttempts=0;
 		const noguess::Generation random=noguess::generate(1,5,2,0,randomRng,{},limits,false);
 		assert(random.status==noguess::GENERATED);
 		assert(random.stats.attempts==0&&random.stats.repairs==0);
 		assert(random.stats.suffixResamples==0&&random.stats.fullShuffles==1);
 		if(!independentlySolvable(1,5,2,0,random.mines))foundAmbiguous=true;
 
-		limits.maxAttempts=512;
 		// Omitting the new bool retains the no-guess guarantee and matches true.
 		const noguess::Generation implicit=noguess::generate(1,5,2,0,noGuessRng,{},limits);
 		const noguess::Generation explicitTrue=noguess::generate(1,5,2,0,explicitRng,{},limits,true);
@@ -271,15 +272,14 @@ void testRandomModeSkipsNoGuessSearch()
 	}
 	// Search seeds rather than hard-code a library-specific shuffled layout.
 	assert(foundAmbiguous&&foundFirstAttempt);
-	for(int stop=0;stop<3;stop++)
+	for(int stop=0;stop<2;stop++)
 	{
 		std::mt19937 rng(0);
 		noguess::Limits stopped;
-		if(stop==0)stopped.maxWork=0;
-		if(stop==1)stopped.maxMillis=0;
+		if(stop==0)stopped.maxMillis=0;
 		const noguess::Generation result=noguess::generate(3,4,2,3,rng,
-			[stop] { return stop!=2; },stopped,false);
-		assert(result.status==(stop==2?noguess::CANCELLED:noguess::EXHAUSTED));
+			[stop] { return stop!=1; },stopped,false);
+		assert(result.status==(stop==1?noguess::CANCELLED:noguess::EXHAUSTED));
 		assert(result.mines.empty());
 	}
 }
@@ -297,15 +297,16 @@ void testFailureStatuses()
 	status(noguess::generate(20,20,200,210,rng,[&callbacks] { return ++callbacks<4; }),
 		noguess::CANCELLED);
 	assert(callbacks==4);
-	for(int budget=0;budget<4;budget++)
-	{
-		noguess::Limits limits;
-		if(budget==0)limits.maxAttempts=0;
-		if(budget==1)limits.maxMillis=0;
-		if(budget==2)limits.maxWork=0;
-		if(budget==3)limits.maxWork=1;
-		status(noguess::generate(9,9,10,0,rng,{},limits),noguess::EXHAUSTED);
-	}
+	// Cancellation must be observed during setup, before allocating an entire
+	// enormous (but arithmetically valid) board now that work is not a limit.
+	callbacks=0;
+	status(noguess::generate(INT_MAX,1,1,INT_MAX-1,rng,
+		[&callbacks] { return ++callbacks<2; }),noguess::CANCELLED);
+	assert(callbacks==2);
+	noguess::Limits limits;
+	assert(limits.maxMillis==3000);
+	limits.maxMillis=0;
+	status(noguess::generate(9,9,10,0,rng,{},limits),noguess::EXHAUSTED);
 	const int invalid[][4]={{0,9,1,0},{INT_MAX,INT_MAX,1,0},
 		{3,3,-1,0},{3,3,9,0},{3,3,1,-1},{3,3,1,9},{3,3,1,4}};
 	for(const auto &fixture:invalid)
@@ -319,7 +320,7 @@ int main()
 	testDeductionSoundness();
 	testInvalidObservations();
 	testGeneratedBoardsAndDeterminism();
-	testRepairAndRedrawBudgets();
+	testRepairAndTimeBudget();
 	testRandomModeSkipsNoGuessSearch();
 	testFailureStatuses();
 	std::cout<<"no-guess oracle and generation tests passed\n";

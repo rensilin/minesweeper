@@ -11,8 +11,7 @@
 
 namespace noguess
 {
-Limits::Limits():maxAttempts(512),repairsPerRound(12),maxMillis(3000),
-	maxWork(20000000)
+Limits::Limits():repairsPerRound(12),maxMillis(3000)
 {
 }
 
@@ -48,15 +47,13 @@ public:
 	void check()
 	{
 		if(keepRunning&&!keepRunning())throw Stopped(CANCELLED);
-		if(stats.work>=limits.maxWork
-			||std::chrono::duration_cast<std::chrono::milliseconds>(
+		if(std::chrono::duration_cast<std::chrono::milliseconds>(
 				std::chrono::steady_clock::now()-started).count()>=limits.maxMillis)
 			throw Stopped(EXHAUSTED);
 		untilCheck=256;
 	}
 	void tick(std::size_t amount=1)
 	{
-		if(amount>limits.maxWork-stats.work)throw Stopped(EXHAUSTED);
 		stats.work+=amount;
 		if(amount>=untilCheck)check();
 		else untilCheck-=amount;
@@ -73,12 +70,13 @@ int areaFor(int rows,int columns)
 Neighbors neighborsFor(int rows,int columns,Budget &budget)
 {
 	budget.tick(static_cast<std::size_t>(rows)*columns);
-	Neighbors neighbors(rows*columns);
+	Neighbors neighbors;
 	for(int row=0;row<rows;row++)
 		for(int column=0;column<columns;column++)
 		{
 			budget.tick(10);
-			Cells &adjacent=neighbors[row*columns+column];
+			neighbors.push_back(Cells());
+			Cells &adjacent=neighbors.back();
 			for(int r=std::max(0,row-1);r<=std::min(rows-1,row+1);r++)
 				for(int c=std::max(0,column-1);c<=std::min(columns-1,column+1);c++)
 					if(r!=row||c!=column)adjacent.push_back(r*columns+c);
@@ -402,14 +400,15 @@ Generation generate(int rows,int columns,int mineCount,int firstCell,
 	try
 	{
 		budget.check();
-		if((noGuess&&!limits.maxAttempts)
-			||static_cast<std::size_t>(area)>limits.maxWork/(noGuess?12:1))
-			throw Stopped(EXHAUSTED);
-		Cells pool,position(area,-1);
-		std::vector<bool> mines(area,false);
+		// Grow storage while polling the deadline instead of initializing a
+		// potentially huge board before the next time/cancellation check.
+		Cells pool,position;
+		std::vector<bool> mines;
 		for(int cell=0;cell<area;cell++)
 		{
 			budget.tick();
+			position.push_back(-1);
+			mines.push_back(false);
 			const int row=cell/columns,column=cell%columns;
 			if(row>=firstRow-1&&row<=firstRow+1
 				&&column>=firstColumn-1&&column<=firstColumn+1)continue;
@@ -429,7 +428,7 @@ Generation generate(int rows,int columns,int mineCount,int firstCell,
 		Neighbors neighbors=neighborsFor(rows,columns,budget);
 		unsigned repairsThisRound=0;
 		int suffixDepth=1;
-		for(unsigned attempt=0;attempt<limits.maxAttempts;attempt++)
+		while(true)
 		{
 			budget.check();
 			result.stats.attempts++;
@@ -441,7 +440,6 @@ Generation generate(int rows,int columns,int mineCount,int firstCell,
 				result.mines.swap(mines);
 				return result;
 			}
-			if(attempt+1==limits.maxAttempts)break;
 			if(repairsThisRound<limits.repairsPerRound
 				&&repair(neighbors,solution,firstCell,mineCount,pool,position,mines,rng,budget))
 			{
@@ -463,7 +461,6 @@ Generation generate(int rows,int columns,int mineCount,int firstCell,
 			}
 			repairsThisRound=0;
 		}
-		result.status=EXHAUSTED;
 	}
 	catch(const Stopped &stopped)
 	{
