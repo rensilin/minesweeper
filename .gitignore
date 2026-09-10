@@ -3,3 +3,4 @@
 minesweeper
 tests/__pycache__/
 /tests/terminal_input_test
+/tests/noguess_test

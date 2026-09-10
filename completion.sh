@@ -1,10 +1,18 @@
 _minesweeper_comp()
 {
-	local cur opt opts
+	local cur prev opt opts
 	COMPREPLY=()
 	cur="${COMP_WORDS[COMP_CWORD]}"
+	prev="${COMP_WORDS[COMP_CWORD-1]}"
 	opt="h v E N H --"
-	opts="--help --version --easy --normal --hard --no-max-size --show --seed --first"
+	opts="--help --version --easy --normal --hard --no-max-size --show --seed --first --mode --max-attempts --generation-timeout"
+	if [[ ${prev} == --mode ]]; then
+		COMPREPLY=( $(compgen -W "random no-guess" -- "${cur}") )
+		return 0
+	elif [[ ${cur} == --mode=* ]]; then
+		COMPREPLY=( $(compgen -W "--mode=random --mode=no-guess" -- "${cur}") )
+		return 0
+	fi
 
 	if [[ ${cur} == - ]]; then
 		COMPREPLY=( $opt )
@@ -14,4 +22,3 @@ _minesweeper_comp()
 	fi
 }
 complete -F _minesweeper_comp minesweeper
-

@@ -40,7 +40,10 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <random>
+#include <sys/select.h>
 #include "terminal_input.h"
+#include "noguess.h"
 
 #define MAXY 100
 #define MAXX 100
@@ -86,6 +89,10 @@ bool firstMove;
 bool showBoard=false,seedSpecified=false;
 unsigned int boardSeed=0;
 int displayFirst=-1;
+enum GameMode { RANDOM_MODE, NO_GUESS_MODE };
+GameMode gameMode=RANDOM_MODE;
+mt19937 boardRandom;
+noguess::Limits generationLimits;
 SColor defaultColor;
 int lastLine;
 int gameResult;
@@ -533,6 +540,7 @@ void drawLayout()
 	beginColor(keyColor);
 	cout<<maxx<<'x'<<maxy;
 	endColor();
+	if(gameMode==NO_GUESS_MODE)drawControl(6,"mode","no-guess");
 	drawMovementControls();
 	drawControl(12,"pan","LMB edge");
 	drawControl(15,"flag","j/f,RMB");
@@ -550,6 +558,11 @@ void clearMessages()
 	cout<<blank;
 	SColor::setCursor(visibleMaxx+4,1);
 	cout<<blank;
+	if(gameMode==NO_GUESS_MODE)
+	{
+		SColor::setCursor(max(visibleMaxx+3,minTerminalRows),1);
+		SColor::cleanLine();
+	}
 	cout.flush();
 }
 
@@ -634,12 +647,119 @@ void handleTerminationSignal(int signal)
 	if(!terminationSignal)terminationSignal=signal;
 }
 
+int maximumZeroMines(int first)
+{
+	int row=first/maxy,column=first%maxy;
+	int protectedRows=min(maxx,row+2)-max(0,row-1);
+	int protectedColumns=min(maxy,column+2)-max(0,column-1);
+	return maxx*maxy-protectedRows*protectedColumns;
+}
+
+void init();
+
+void showGenerationMessage(const string &message)
+{
+	if(terminalTooSmall)return;
+	SColor::setCursor(max(visibleMaxx+3,minTerminalRows),1);
+	SColor::cleanLine();
+	beginColor(labelColor);
+	cout<<message.substr(0,static_cast<size_t>(terminalColumns));
+	endColor();
+	cout.flush();
+}
+
+bool generateFirstBoard(int row,int column)
+{
+	int first=row*maxy+column;
+	if(mineNum>maximumZeroMines(first))
+	{
+		showGenerationMessage("First zero supports 1.."+to_string(maximumZeroMines(first))
+			+" mines here; choose another cell");
+		return false;
+	}
+	const string message="Generating no-guess... q:quit r:cancel";
+	showGenerationMessage(message);
+	bool cancelled=false;
+	auto keepRunning=[&]()
+	{
+		if(terminationSignal)quit(128+terminationSignal);
+		if(terminalResized)
+		{
+			updateTerminalViewport();
+			redrawScreen();
+			showGenerationMessage(message);
+		}
+		// Drain a bounded number of queued bytes; partial mouse packets stay
+		// in the shared decoder and never become generation commands.
+		for(int polled=0;polled<128;polled++)
+		{
+			fd_set input;
+			FD_ZERO(&input);
+			FD_SET(STDIN_FILENO,&input);
+			struct timeval timeout={0,0};
+			if(select(STDIN_FILENO+1,&input,NULL,NULL,&timeout)<=0)break;
+			errno=0;
+			int key=getchar();
+			if(key==EOF)
+			{
+				if(errno==EINTR){clearerr(stdin);break;}
+				quit();
+			}
+			auto event=inputDecoder.feed(key);
+			if(event.type!=terminalInput::KEY)continue;
+			if(event.key=='q')quit();
+			if(event.key=='r')cancelled=true;
+		}
+		return !cancelled;
+	};
+	try
+	{
+		noguess::Generation generated=noguess::generate(maxx,maxy,mineNum,first,
+			boardRandom,keepRunning,generationLimits);
+		clearMessages();
+		if(generated.status==noguess::CANCELLED)
+		{
+			init();
+			showGenerationMessage("Generation cancelled; open a cell to retry");
+			return false;
+		}
+		if(generated.status!=noguess::GENERATED)
+		{
+			showGenerationMessage("No-guess budget exhausted; Space:retry r:restart q:quit");
+			return false;
+		}
+		for(int r=0;r<maxx;r++)
+			for(int c=0;c<maxy;c++)
+			{
+				mMine[r][c]=generated.mines[r*maxy+c];
+				mMap[r][c]=0;
+			}
+		for(int r=0;r<maxx;r++)
+			for(int c=0;c<maxy;c++)
+				if(mMine[r][c])
+					for(int nr=max(0,r-1);nr<min(maxx,r+2);nr++)
+						for(int nc=max(0,c-1);nc<min(maxy,c+2);nc++)
+							mMap[nr][nc]++;
+		return true;
+	}
+	catch(const exception &)
+	{
+		clearMessages();
+		showGenerationMessage("No-guess generation failed; Space:retry r:restart q:quit");
+		return false;
+	}
+}
+
 bool sweepMine(int x,int y)
 {
 	if(mFlag[x][y])return true;
 	if(firstMove)
 	{
-		if(mMine[x][y])
+		if(gameMode==NO_GUESS_MODE)
+		{
+			if(!generateFirstBoard(x,y))return true;
+		}
+		else if(mMine[x][y])
 		{
 			for(int i=x-1;i<x+2;i++)
 				for(int j=y-1;j<y+2;j++)
@@ -732,7 +852,7 @@ void init()
 		exit(1);
 	}
 	int mineY,mineX;
-	for(int k=0;k<mineNum;k++)
+	for(int k=0;gameMode==RANDOM_MODE&&k<mineNum;k++)
 	{
 		mineY=rand()%maxy;
 		mineX=rand()%maxx;
@@ -980,6 +1100,9 @@ void argsParse(int argc,char **argv)
 					,{'3','H',"hard"});
 	args::Flag noMaxSize(parser,"no max size",
 					"Allow board dimensions above 100.",{"no-max-size"});
+	args::ValueFlag<string> mode(parser,"mode","Board generation: random (default) or no-guess.",{"mode"},"random");
+	args::ValueFlag<string> attempts(parser,"count","Maximum complete-board checks in no-guess mode (default: 512).",{"max-attempts"});
+	args::ValueFlag<string> timeout(parser,"milliseconds","No-guess generation time budget (default: 3000 ms).",{"generation-timeout"});
 	args::Flag show(parser,"show","Print the complete board without terminal controls, then exit.",{"show"});
 	args::ValueFlag<string> first(parser,"row,column","1-based first click for --show (default: center); initial cursor otherwise.",{"first"});
 	args::ValueFlag<string> seed(parser,"seed","Unsigned 32-bit seed for reproducible random generation.",{"seed"});
@@ -1011,6 +1134,43 @@ void argsParse(int argc,char **argv)
 		cout<<version<<endl;
 		exit(0);
 	}
+	string modeName=args::get(mode);
+	if(modeName=="no-guess")gameMode=NO_GUESS_MODE;
+	else if(modeName!="random")
+	{
+		cerr<<"error: --mode must be random or no-guess"<<endl;
+		exit(1);
+	}
+	if(attempts||timeout)
+	{
+		if(gameMode!=NO_GUESS_MODE)
+		{
+			cerr<<"error: generation limits require --mode=no-guess"<<endl;
+			exit(1);
+		}
+		auto positiveLimit=[](const string &value,const string &option)
+		{
+			unsigned parsed=0,maximum=static_cast<unsigned>(numeric_limits<int>::max());
+			bool valid=!value.empty();
+			for(char c:value)
+			{
+				if(c<'0'||c>'9'||parsed>(maximum-static_cast<unsigned>(c-'0'))/10)
+				{
+					valid=false;
+					break;
+				}
+				parsed=parsed*10+static_cast<unsigned>(c-'0');
+			}
+			if(!valid||!parsed)
+			{
+				cerr<<"error: "<<option<<" must be a positive integer in 1.."<<maximum<<endl;
+				exit(1);
+			}
+			return parsed;
+		};
+		if(attempts)generationLimits.maxAttempts=positiveLimit(args::get(attempts),"--max-attempts");
+		if(timeout)generationLimits.maxMillis=positiveLimit(args::get(timeout),"--generation-timeout");
+	}
 	if(easy)difficulty=easyV;
 	else if(normal)difficulty=normalV;
 	else if(hard)difficulty=hardV;
@@ -1026,16 +1186,23 @@ void argsParse(int argc,char **argv)
 		long long boardArea=static_cast<long long>(maxx)*maxy;
 		int maxMineNum=boardArea>numeric_limits<int>::max()
 			?numeric_limits<int>::max():static_cast<int>(boardArea-1);
-		if(acountOfMine)mineNum=max(1,min(maxMineNum,args::get(acountOfMine)));
+		if(acountOfMine)mineNum=gameMode==NO_GUESS_MODE?args::get(acountOfMine)
+			:max(1,min(maxMineNum,args::get(acountOfMine)));
 		else mineNum=static_cast<int>(sqrt(static_cast<double>(boardArea)));
 		difficulty=difficultyV;
 	}
 	else difficulty=normalV;
 	if(difficultyV!=difficulty)memcpy(difficultyV,difficulty,sizeof(int)*3);
 	showBoard=bool(show);
-	if((showBoard||first)&&1LL*maxx*maxy>numeric_limits<int>::max())
+	if((showBoard||first||gameMode==NO_GUESS_MODE)&&1LL*maxx*maxy>numeric_limits<int>::max())
 	{
-		cerr<<"error: --show and --first support at most INT_MAX board cells"<<endl;
+		cerr<<"error: --show, --first and no-guess mode support at most INT_MAX board cells"<<endl;
+		exit(1);
+	}
+	if(gameMode==NO_GUESS_MODE&&(mineNum<1||mineNum>maxx*maxy-4))
+	{
+		cerr<<"error: no-guess mode supports 1.."<<maxx*maxy-4
+			<<" mines; the first zero needs at least four safe cells"<<endl;
 		exit(1);
 	}
 	if(first)
@@ -1070,20 +1237,42 @@ int printBoardAndExit()
 	auto started=chrono::steady_clock::now();
 	try
 	{
-		vector<bool> mines(maxx*maxy,false);
-		for(int placed=0;placed<mineNum;)
+		vector<bool> mines;
+		noguess::Stats stats;
+		if(gameMode==NO_GUESS_MODE)
+		{
+			if(mineNum>maximumZeroMines(first))
+			{
+				cerr<<"error: this first zero supports 1.."<<maximumZeroMines(first)<<" mines"<<endl;
+				return 1;
+			}
+			auto generated=noguess::generate(maxx,maxy,mineNum,first,boardRandom,
+				[]{return true;},generationLimits);
+			if(generated.status!=noguess::GENERATED)
+			{
+				cerr<<"error: no-guess generation budget exhausted after "<<generated.stats.attempts
+					<<" attempts; try another seed, fewer mines, or a larger budget"<<endl;
+				return 1;
+			}
+			mines=std::move(generated.mines);
+			stats=generated.stats;
+		}
+		else mines.assign(maxx*maxy,false);
+		for(int placed=0;gameMode==RANDOM_MODE&&placed<mineNum;)
 		{
 			int column=rand()%maxy,row=rand()%maxx,cell=row*maxy+column;
 			if(!mines[cell]){mines[cell]=true;placed++;}
 		}
-		if(mines[first])
+		if(gameMode==RANDOM_MODE&&mines[first])
 		{
 			int cell;
 			do{int row=rand()%maxx,column=rand()%maxy;cell=row*maxy+column;}while(mines[cell]);
 			mines[first]=false;mines[cell]=true;
 		}
 		cout<<"rows="<<maxx<<" columns="<<maxy<<" mines="<<mineNum
-			<<" first="<<first/maxy+1<<','<<first%maxy+1<<" seed="<<boardSeed<<'\n';
+			<<" first="<<first/maxy+1<<','<<first%maxy+1<<" seed="<<boardSeed;
+		if(gameMode==NO_GUESS_MODE)cout<<" mode=no-guess attempts="<<stats.attempts;
+		cout<<'\n';
 		cout<<"elapsed_ms="<<fixed<<setprecision(3)<<chrono::duration<double,milli>(chrono::steady_clock::now()-started).count()
 			<<" (* mine, . zero, digits clues)\n";
 		for(int r=0;r<maxx;r++)
@@ -1108,6 +1297,7 @@ int main(int argc,char** argv)
 	argsParse(argc,argv);
 	if(!seedSpecified)boardSeed=static_cast<unsigned int>(time(NULL));
 	srand(boardSeed);
+	boardRandom.seed(boardSeed);
 	if(showBoard)return printBoardAndExit();
 	realInit();
 	updateTerminalViewport();

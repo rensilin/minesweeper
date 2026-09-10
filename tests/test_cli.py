@@ -146,11 +146,11 @@ class CliTests(unittest.TestCase):
         help_result = subprocess.run([BINARY, '--help'], capture_output=True, text=True)
         self.assertEqual(help_result.returncode, 0)
         self.assertIn('--show', help_result.stdout)
-        self.assertNotIn('--mode', help_result.stdout)
+        self.assertIn('--mode', help_result.stdout)
         self.assertNotIn('--min-hard', help_result.stdout)
         self.assertEqual(subprocess.run([BINARY, '--version'], capture_output=True).returncode, 0)
-        for args in [('--mode', 'connected'), ('--mode=no-guess',), ('--mode=grammar',),
-                     ('--mode=random',), ('--min-hard', '0'), ('--unknown',),
+        for args in [('--mode', 'connected'), ('--mode=grammar',),
+                     ('--mode=unknown',), ('--min-hard', '0'), ('--unknown',),
                      ('--no-max-size', '100000', '100000', '10', '--show')]:
             with self.subTest(args=args):
                 result = subprocess.run([BINARY, *args], capture_output=True, text=True)

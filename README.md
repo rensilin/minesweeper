@@ -33,7 +33,7 @@ or
 
 ## board generation
 
-Boards use the original random mine placement. The mine count is exact; if the
+The default `--mode=random` uses the original random mine placement. The mine count is exact; if the
 first opened cell contains a mine, that mine moves to a randomly chosen safe
 cell. The first opening is always safe, but may be a number, and later moves
 may require guessing. Mine counts are clamped to 1 through board area minus 1.
@@ -41,6 +41,39 @@ may require guessing. Mine counts are clamped to 1 through board area minus 1.
 ```sh
 ./minesweeper 20 20 200
 ```
+
+### no-guess mode
+
+```sh
+./minesweeper 20 20 100 --mode=no-guess
+./minesweeper 20 20 100 --mode=no-guess --show --first 11,11 --seed 0
+```
+
+The board is generated when you first open a cell. That cell and all its
+neighbors are safe, so the first clue is zero. Every returned board has been
+solved from that opening using logical deductions. The solver uses visible
+clues, subset differences and the remaining mine count; it has no NG2/NG3 or
+difficulty restriction. A solver that gets stuck causes another generation
+attempt, without claiming that the candidate is logically impossible to solve.
+
+The generator shuffles a complete board, relocates mines near a stalled clue,
+and progressively redraws the last few mine placements when repairs do not
+succeed. Every edit is checked again from the first opening. Your chosen mine
+count is preserved, and the default random mode remains available.
+
+Generation is bounded by 512 board checks, 3000 milliseconds and an internal
+work limit. Change the first two with `--max-attempts COUNT` and
+`--generation-timeout MILLISECONDS`; both require positive integers and
+`--mode=no-guess`. The first limit reached ends the attempt. Dense boards may
+exhaust the budget. In interactive play, Space retries, `r` restarts and `q`
+quits; while generation is running, `r` cancels and `q` quits. `--show` reports
+failure on stderr and exits unsuccessfully without printing an unchecked board.
+
+No-guess mode rejects unsupported mine counts instead of clamping them. At
+least four cells must remain safe for a corner opening, six for an edge, and
+nine for an interior opening. An interactive click with insufficient space
+shows the supported range and lets you choose another cell. See
+[the generation algorithm](docs/no-guess.md) for the solver and retry policy.
 
 ## print a board and exit
 
@@ -60,6 +93,9 @@ an unsigned 32-bit integer. Using the same dimensions, mine count, seed and
 first opening reproduces the initial board on the same platform, including
 between `--show` and interactive play. Restart creates a new random board.
 Elapsed time in the output is not expected to be reproducible.
+No-guess mode also requires the same generation limits; the wall-clock limit
+can stop generation sooner on a slower machine. `--show` reports its mode and
+number of board checks in the header when no-guess generation succeeds.
 
 ## tests
 
