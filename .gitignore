@@ -1,3 +1,5 @@
 *.o
 *.swp
 minesweeper
+tests/__pycache__/
+/tests/terminal_input_test

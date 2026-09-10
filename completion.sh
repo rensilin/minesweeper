@@ -1,11 +1,10 @@
 _minesweeper_comp()
 {
-	local cur prev opt opts
+	local cur opt opts
 	COMPREPLY=()
 	cur="${COMP_WORDS[COMP_CWORD]}"
-	prev="${COMP_WORDS[COMP_CWORD-1]}"
 	opt="h v E N H --"
-	opts="--help --version --easy --normal --hard --no-max-size"
+	opts="--help --version --easy --normal --hard --no-max-size --show --seed --first"
 
 	if [[ ${cur} == - ]]; then
 		COMPREPLY=( $opt )

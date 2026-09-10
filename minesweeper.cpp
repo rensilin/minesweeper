@@ -37,6 +37,10 @@
 #include <vector>
 #include "SColor/SColor.h"
 #include "args/args.hxx"
+#include <sstream>
+#include <iomanip>
+#include <chrono>
+#include "terminal_input.h"
 
 #define MAXY 100
 #define MAXX 100
@@ -53,7 +57,7 @@ const int hardV[3]={20,20,60};
 int difficultyV[3];
 const int *difficulty;
 
-const int minimumPanelWidth=18;
+const int minimumPanelWidth=22;
 const int reservedTerminalRows=5;
 const int minTerminalRows=19;
 const int minBoardSize=9;
@@ -76,11 +80,17 @@ long long hiddenSafeSquares;
 vector<pair<int,int> > highlightedCells;
 
 int cInput;
+terminalInput::Decoder inputDecoder;
+bool mouseEnabled=false;
 bool firstMove;
+bool showBoard=false,seedSpecified=false;
+unsigned int boardSeed=0;
+int displayFirst=-1;
 SColor defaultColor;
 int lastLine;
 int gameResult;
 volatile sig_atomic_t terminalResized;
+volatile sig_atomic_t terminationSignal;
 bool colorEnabled;
 bool unicodeEnabled;
 bool boardSizeLimited;
@@ -207,7 +217,7 @@ void updateTerminalViewport()
 {
 	string sizeValue=to_string(maxx)+"x"+to_string(maxy);
 	long long boardArea=static_cast<long long>(maxx)*maxy;
-	int sizeWidth=static_cast<int>(sizeValue.size())+11;
+	int sizeWidth=static_cast<int>(sizeValue.size())+13;
 	int counterWidth=static_cast<int>(to_string(boardArea).size())+14;
 	panelWidth=max(minimumPanelWidth,max(sizeWidth,counterWidth));
 	struct winsize terminalSize;
@@ -258,6 +268,7 @@ void updateTerminalViewport()
 
 void restoreTerminal()
 {
+	if(mouseEnabled)cout<<"\033[?1000l\033[?1006l";
 	SColor::echoCursor();
 	endColor();
 	int exitRow=terminalTooSmall?max(1,terminalRows):max(1,lastLine);
@@ -268,10 +279,10 @@ void restoreTerminal()
 	res=tcsetattr(STDIN_FILENO, TCSANOW, &org_opts);assert(res==0);
 }
 
-void quit()
+void quit(int status=0)
 {
 	restoreTerminal();
-	exit(0);
+	exit(status);
 }
 
 bool sameCellView(const CellView &left,const CellView &right)
@@ -331,13 +342,18 @@ void renderCell(int x,int y,const CellView &view)
 	endColor();
 }
 
+void drawPanelLabel(int row,const string &label)
+{
+	SColor::setCursor(row,3*visibleMaxy+3);
+	beginColor(labelColor);
+	cout<<' '<<label<<string(11-label.size(),' ')<<':';
+}
+
 void refreshStatus()
 {
 	if(!renderedStatusValid||renderedRestOfSquare!=theRestOfSquare)
 	{
-		SColor::setCursor(10,3*visibleMaxy+3);
-		beginColor(labelColor);
-		cout<<" rest square:";
+		drawPanelLabel(10,"rest square");
 		beginColor(keyColor);
 		cout<<theRestOfSquare;
 		endColor();
@@ -346,9 +362,7 @@ void refreshStatus()
 	}
 	if(!renderedStatusValid||renderedRestOfMine!=theRestOfMine)
 	{
-		SColor::setCursor(11,3*visibleMaxy+3);
-		beginColor(labelColor);
-		cout<<" rest mine  :";
+		drawPanelLabel(11,"rest mine");
 		beginColor(keyColor);
 		cout<<theRestOfMine;
 		endColor();
@@ -381,12 +395,7 @@ void refreshMap(int finished=0)
 
 void drawControl(int row,const string &label,const string &key)
 {
-	SColor::setCursor(row,3*visibleMaxy+3);
-	cout<<"   ";
-	beginColor(labelColor);
-	cout<<label;
-	for(size_t i=label.size();i<7;i++)cout<<' ';
-	cout<<':';
+	drawPanelLabel(row,label);
 	beginColor(keyColor);
 	cout<<key;
 	endColor();
@@ -516,23 +525,18 @@ void drawLayout()
 		cout<<(boardClipped?"warning:clipped":"warning:limited");
 		endColor();
 	}
-	SColor::setCursor(8,3*visibleMaxy+3);
-	cout<<"   ";
-	beginColor(labelColor);
-	cout<<"view   :";
+	drawPanelLabel(8,"view");
 	beginColor(keyColor);
 	cout<<visibleMaxx<<'x'<<visibleMaxy;
 	endColor();
-	SColor::setCursor(9,3*visibleMaxy+3);
-	cout<<"   ";
-	beginColor(labelColor);
-	cout<<"size   :";
+	drawPanelLabel(9,"size");
 	beginColor(keyColor);
 	cout<<maxx<<'x'<<maxy;
 	endColor();
 	drawMovementControls();
-	drawControl(15,"flag","j/f");
-	drawControl(16,"sweep","space");
+	drawControl(12,"pan","LMB edge");
+	drawControl(15,"flag","j/f,RMB");
+	drawControl(16,"sweep","space,LMB");
 	drawControl(17,"restart","r");
 	drawControl(18,"quit","q");
 	cout.flush();
@@ -625,12 +629,16 @@ void handleTerminalResize(int)
 	terminalResized=1;
 }
 
+void handleTerminationSignal(int signal)
+{
+	if(!terminationSignal)terminationSignal=signal;
+}
+
 bool sweepMine(int x,int y)
 {
 	if(mFlag[x][y])return true;
 	if(firstMove)
 	{
-		firstMove=false;
 		if(mMine[x][y])
 		{
 			for(int i=x-1;i<x+2;i++)
@@ -649,6 +657,7 @@ bool sweepMine(int x,int y)
 					if(j>=0&&i>=0&&j<maxy&&i<maxx)
 						mMap[i][j]++;
 		}
+		firstMove=false;
 	}
 	vector<pair<int,int> > pending;
 	if(mSight[x][y])
@@ -742,11 +751,30 @@ void init()
 	hiddenSafeSquares=theRestOfSquare-mineNum;
 }
 
+// Border clicks pan one logical row/column; keep selection within the new
+// viewport so the keyboard's cursor-following logic does not undo the pan.
+bool panFromMouse(int column,int row)
+{
+	int right=3*visibleMaxy+2,bottom=visibleMaxx+2;
+	if(column<1||column>right||row<1||row>bottom)return false;
+	int oldX=viewportX,oldY=viewportY;
+	if(row==1&&viewportX>0)viewportX--;
+	if(row==bottom&&viewportX+visibleMaxx<maxx)viewportX++;
+	if(column==1&&viewportY>0)viewportY--;
+	if(column==right&&viewportY+visibleMaxy<maxy)viewportY++;
+	if(oldX==viewportX&&oldY==viewportY)return false;
+	nowx=max(viewportX,min(nowx,viewportX+visibleMaxx-1));
+	nowy=max(viewportY,min(nowy,viewportY+visibleMaxy-1));
+	invalidateRenderedState();
+	drawViewportBorders();
+	return true;
+}
+
 bool getInput()
 {
-	int escapeState=0;
 	while(1)
 	{
+		if(terminationSignal)quit(128+terminationSignal);
 		if(terminalResized)
 		{
 			updateTerminalViewport();
@@ -764,44 +792,26 @@ bool getInput()
 			}
 			quit();
 		}
+		auto event=inputDecoder.feed(cInput);
+		if(event.type==terminalInput::NONE)continue;
 		if(terminalTooSmall)
 		{
-			if(cInput=='q')quit();
+			if(event.type==terminalInput::KEY&&event.key=='q')quit();
 			continue;
 		}
-		if(escapeState==1)
+		if(event.type==terminalInput::MOUSE)
 		{
-			if(cInput=='['||cInput=='O')
-			{
-				escapeState=2;
-				continue;
-			}
-			escapeState=0;
+			if(!mouseEnabled)continue;
+			if(event.button==0&&panFromMouse(event.column,event.row))return true;
+			if(event.row<2||event.row>visibleMaxx+1
+				||event.column<2||event.column>3*visibleMaxy+1)continue;
+			nowx=viewportX+event.row-2;
+			nowy=viewportY+(event.column-2)/3;
+			cInput=event.button==0?' ':'f';
 		}
-		else if(escapeState==2)
-		{
-			escapeState=0;
-			switch(cInput)
-			{
-			case 'A':
-				if(nowx>0)nowx--;
-				return true;
-			case 'B':
-				if(nowx<maxx-1)nowx++;
-				return true;
-			case 'C':
-				if(nowy<maxy-1)nowy++;
-				return true;
-			case 'D':
-				if(nowy>0)nowy--;
-				return true;
-			}
-		}
+		else cInput=event.key;
 		switch (cInput)
 		{
-		case '\033':
-			escapeState=1;
-			break;
 		case 'w':
 			if(nowx>0)nowx--;
 			return true;
@@ -816,14 +826,15 @@ bool getInput()
 			return true;
 		case 'f':
 		case 'j':
-			if(mSight[nowx][nowy])break;
+			if(mSight[nowx][nowy])return true;
 			if(mFlag[nowx][nowy]){mFlag[nowx][nowy]=false;theRestOfMine++;theRestOfSquare++;}
 			else {mFlag[nowx][nowy]=true;theRestOfMine--;theRestOfSquare--;}
 			return true;
 		case ' ':
-			if(mFlag[nowx][nowy])break;
+			if(mFlag[nowx][nowy])return true;
 			return sweepMine(nowx,nowy);
 		case 'r':
+			clearMessages();
 			updateTerminalViewport();
 			init();
 			return true;
@@ -871,6 +882,7 @@ bool newGameStart()
 	showNewGamePrompt();
 	while(1)
 	{
+		if(terminationSignal)quit(128+terminationSignal);
 		if(terminalResized)
 		{
 			updateTerminalViewport();
@@ -888,6 +900,18 @@ bool newGameStart()
 			}
 			return false;
 		}
+		auto event=inputDecoder.feed(input);
+		if(event.type==terminalInput::MOUSE)
+		{
+			if(!mouseEnabled||terminalTooSmall||event.button!=0
+				||event.row!=visibleMaxx+4)continue;
+			// Hit boxes include the brackets in "new game [y]  quit [q]".
+			if(event.column>=10&&event.column<=12)return true;
+			if(event.column>=20&&event.column<=22)return false;
+			continue;
+		}
+		if(event.type!=terminalInput::KEY)continue;
+		input=event.key;
 		if(terminalTooSmall)
 		{
 			if(input=='q')return false;
@@ -903,6 +927,7 @@ void realInit()
 	struct termios new_opts;
 	int res=0;
 	detectTerminalCapabilities();
+	setvbuf(stdin,NULL,_IONBF,0);
 	//-----  store old settings -----------
 	res=tcgetattr(STDIN_FILENO, &org_opts);
 	assert(res==0);
@@ -911,12 +936,21 @@ void realInit()
 	resizeAction.sa_handler=handleTerminalResize;
 	sigemptyset(&resizeAction.sa_mask);
 	res=sigaction(SIGWINCH,&resizeAction,NULL);assert(res==0);
+	struct sigaction terminationAction;
+	memset(&terminationAction,0,sizeof(terminationAction));
+	terminationAction.sa_handler=handleTerminationSignal;
+	sigemptyset(&terminationAction.sa_mask);
+	res=sigaction(SIGINT,&terminationAction,NULL);assert(res==0);
+	res=sigaction(SIGTERM,&terminationAction,NULL);assert(res==0);
 	//---- set new terminal parms --------
 	memcpy(&new_opts, &org_opts, sizeof(new_opts));
 	new_opts.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ECHOPRT | ECHOKE | ICRNL);
 	tcsetattr(STDIN_FILENO, TCSANOW, &new_opts);
 
-	srand(time(NULL));
+	srand(boardSeed);
+	const char *term=getenv("TERM");
+	mouseEnabled=isatty(STDIN_FILENO)&&isatty(STDOUT_FILENO)&&term&&strcmp(term,"dumb")!=0;
+	if(mouseEnabled)cout<<"\033[?1000h\033[?1006h";
 	SColor::hideCursor();
 	for(auto &i:nColor)i|=SColor::HIGHLIGHT;
 }
@@ -946,6 +980,9 @@ void argsParse(int argc,char **argv)
 					,{'3','H',"hard"});
 	args::Flag noMaxSize(parser,"no max size",
 					"Allow board dimensions above 100.",{"no-max-size"});
+	args::Flag show(parser,"show","Print the complete board without terminal controls, then exit.",{"show"});
+	args::ValueFlag<string> first(parser,"row,column","1-based first click for --show (default: center); initial cursor otherwise.",{"first"});
+	args::ValueFlag<string> seed(parser,"seed","Unsigned 32-bit seed for reproducible random generation.",{"seed"});
 	args::Positional<int> height(parser,"height","set height (minimum 9)");
 	args::Positional<int> weight(parser,"width","set width (minimum 9)");
 	args::Positional<int> acountOfMine(parser,"acount of mine","set acount of mine");
@@ -995,11 +1032,83 @@ void argsParse(int argc,char **argv)
 	}
 	else difficulty=normalV;
 	if(difficultyV!=difficulty)memcpy(difficultyV,difficulty,sizeof(int)*3);
+	showBoard=bool(show);
+	if((showBoard||first)&&1LL*maxx*maxy>numeric_limits<int>::max())
+	{
+		cerr<<"error: --show and --first support at most INT_MAX board cells"<<endl;
+		exit(1);
+	}
+	if(first)
+	{
+		string value=args::get(first);int row=0,column=0;char comma=0;
+		istringstream input(value);
+		if(!(input>>row>>comma>>column)||comma!=','||!input.eof()||row<1||row>maxx||column<1||column>maxy)
+		{
+			cerr<<"error: --first must be row,column within the configured board (1-based)"<<endl;
+			exit(1);
+		}
+		displayFirst=(row-1)*maxy+column-1;nowx=row-1;nowy=column-1;
+	}
+	if(seed)
+	{
+		string value=args::get(seed);unsigned long long parsed=0;
+		bool valid=!value.empty();
+		for(char c:value)
+		{
+			if(c<'0'||c>'9'||parsed>429496729ULL){valid=false;break;}
+			parsed=parsed*10+c-'0';
+			if(parsed>4294967295ULL){valid=false;break;}
+		}
+		if(!valid){cerr<<"error: --seed must be in 0..4294967295"<<endl;exit(1);}
+		boardSeed=static_cast<unsigned int>(parsed);seedSpecified=true;
+	}
+}
+
+int printBoardAndExit()
+{
+	int first=displayFirst<0?(maxx/2)*maxy+maxy/2:displayFirst;
+	auto started=chrono::steady_clock::now();
+	try
+	{
+		vector<bool> mines(maxx*maxy,false);
+		for(int placed=0;placed<mineNum;)
+		{
+			int column=rand()%maxy,row=rand()%maxx,cell=row*maxy+column;
+			if(!mines[cell]){mines[cell]=true;placed++;}
+		}
+		if(mines[first])
+		{
+			int cell;
+			do{int row=rand()%maxx,column=rand()%maxy;cell=row*maxy+column;}while(mines[cell]);
+			mines[first]=false;mines[cell]=true;
+		}
+		cout<<"rows="<<maxx<<" columns="<<maxy<<" mines="<<mineNum
+			<<" first="<<first/maxy+1<<','<<first%maxy+1<<" seed="<<boardSeed<<'\n';
+		cout<<"elapsed_ms="<<fixed<<setprecision(3)<<chrono::duration<double,milli>(chrono::steady_clock::now()-started).count()
+			<<" (* mine, . zero, digits clues)\n";
+		for(int r=0;r<maxx;r++)
+		{
+			for(int c=0;c<maxy;c++)
+			{
+				if(c)cout<<' ';
+				int cell=r*maxy+c,n=0;
+				for(int nr=max(0,r-1);nr<min(maxx,r+2);nr++)
+					for(int nc=max(0,c-1);nc<min(maxy,c+2);nc++)n+=mines[nr*maxy+nc];
+				cout<<(mines[cell]?'*':n?static_cast<char>('0'+n):'.');
+			}
+			cout<<'\n';
+		}
+		return 0;
+	}
+	catch(const exception &e){cerr<<"error: generation failed: "<<e.what()<<endl;return 1;}
 }
 
 int main(int argc,char** argv)
 {
 	argsParse(argc,argv);
+	if(!seedSpecified)boardSeed=static_cast<unsigned int>(time(NULL));
+	srand(boardSeed);
+	if(showBoard)return printBoardAndExit();
 	realInit();
 	updateTerminalViewport();
 	init();
