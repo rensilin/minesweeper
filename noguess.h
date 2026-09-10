@@ -42,9 +42,10 @@ struct Generation
 
 // Row-major public information: -1 hidden, -2 proven mine, 0..8 visible clue.
 // Uses only these observations and the total mine count. Returned indices are
-// hidden cells. Deduction is sound but incomplete, including when its bounded
-// subset-difference search stops. Invalid dimensions or detected inconsistent
-// observations throw std::invalid_argument.
+// hidden cells. Direct and subset rules are followed by constraint backtracking:
+// a cell is forced only when its opposite assumption has no compatible model.
+// Search is time-limited, so a timeout can return no deductions. Invalid
+// dimensions or detected inconsistent observations throw std::invalid_argument.
 Deductions deduce(int rows,int columns,int mineCount,
 	const std::vector<int> &visible);
 

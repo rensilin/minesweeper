@@ -58,10 +58,13 @@ lets you choose another cell.
 
 The board is generated when you first open a cell. That cell and all its
 neighbors are safe, so the first clue is zero. Every returned board has been
-solved from that opening using logical deductions. The solver uses visible
-clues, subset differences and the remaining mine count; it has no NG2/NG3 or
-difficulty restriction. A solver that gets stuck causes another generation
-attempt, without claiming that the candidate is logically impossible to solve.
+solved from that opening using logical deductions. The solver first uses
+visible clues and subset differences. If these rules stall, it searches possible
+mine assignments with backtracking, pruning contradictions against clues and
+the total mine count. A cell is opened or marked only after its opposite
+assumption has been proved impossible. There is no NG2/NG3 or difficulty
+restriction. If no cell is forced, the generator tries another candidate;
+search also shares the overall generation timeout.
 
 The generator shuffles a complete board, relocates mines near a stalled clue,
 and progressively redraws the last few mine placements when repairs do not

@@ -94,6 +94,9 @@ unsigned soundDeductions(int rows,int columns,unsigned layout,unsigned observed)
 		assert((mines&(1u<<cell))&&!(returned&(1u<<cell)));
 		returned|=1u<<cell;
 	}
+	// On these small instances, search must find a deduction whenever all
+	// compatible layouts agree on any hidden cell, not merely stay sound.
+	assert(!((safe|mines)&~observed)||returned);
 	return population(returned);
 }
 
@@ -105,7 +108,7 @@ void testDeductionSoundness()
 			deductions+=soundDeductions(2,3,layout,observed);
 	assert(deductions>0);
 	std::mt19937 fixtures(4294967295u);
-	for(int sample=0;sample<256;sample++)
+	for(int sample=0;sample<2048;sample++)
 		soundDeductions(3,4,fixtures()&4095u,fixtures()&4095u);
 	// Basic-rule regressions prevent an always-empty implementation from passing.
 	// The total must subtract already proven mines, even with no open clues.
@@ -118,6 +121,25 @@ void testDeductionSoundness()
 	sameCells(noguess::deduce(1,4,4,{-2,-1,-1,-1}).mines,{1,2,3});
 	sameCells(noguess::deduce(1,3,0,{-1,0,-1}).safe,{0,2});
 	sameCells(noguess::deduce(1,3,2,{-1,2,-1}).mines,{0,2});
+}
+
+void testConstraintSearch()
+{
+	// Neither direct rules nor subset differences deduce a cell here. The
+	// full clue system plus total mine count forces cell 4 safe and 2,9,10 mined.
+	const auto found=noguess::deduce(3,4,8,{-2,-2,-1,-2,-1,6,6,-1,-2,-1,-1,-1});
+	assert(!found.safe.empty()||!found.mines.empty());
+	for(int cell:found.safe)assert(cell==4);
+	for(int cell:found.mines)assert(cell==2||cell==9||cell==10);
+	// Cells 3 and 4 touch no visible clue. Their interchangeable group must
+	// still take part in the total mine constraint without being enumerated.
+	const auto freeSafe=noguess::deduce(1,5,1,{-1,1,-1,-1,-1});
+	assert(freeSafe.safe==std::vector<int>({3,4})&&freeSafe.mines.empty());
+	const auto freeMines=noguess::deduce(1,5,3,{-1,1,-1,-1,-1});
+	assert(freeMines.mines==std::vector<int>({3,4})&&freeMines.safe.empty());
+	// Both opposing assumptions have a model: neither side may be played.
+	const auto ambiguous=noguess::deduce(1,3,1,{-1,1,-1});
+	assert(ambiguous.safe.empty()&&ambiguous.mines.empty());
 }
 
 void testInvalidObservations()
@@ -229,12 +251,16 @@ void testRepairAndTimeBudget()
 	assert(exhausted.stats.repairs==0);
 	assert(exhausted.stats.suffixResamples>0&&exhausted.stats.fullShuffles>1);
 
-	limits.maxMillis=30000;
 	limits.repairsPerRound=12;
+	std::mt19937 retryRng(0);
+	const noguess::Generation retry=noguess::generate(2,7,3,3,retryRng,{},limits);
+	assert(retry.status==noguess::EXHAUSTED&&retry.mines.empty());
+	assert(retry.stats.repairs>0&&retry.stats.suffixResamples>0);
+
+	limits.maxMillis=30000;
 	std::mt19937 repairRng(0);
 	const noguess::Generation repaired=noguess::generate(20,20,100,210,repairRng,{},limits);
 	assert(repaired.status==noguess::GENERATED);
-	assert(repaired.stats.repairs>0&&repaired.stats.suffixResamples>0);
 	assert(repaired.mines.size()==400);
 	assert(std::count(repaired.mines.begin(),repaired.mines.end(),true)==100);
 	for(int row=9;row<=11;row++)
@@ -318,6 +344,7 @@ void testFailureStatuses()
 int main()
 {
 	testDeductionSoundness();
+	testConstraintSearch();
 	testInvalidObservations();
 	testGeneratedBoardsAndDeterminism();
 	testRepairAndTimeBudget();

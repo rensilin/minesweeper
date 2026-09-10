@@ -108,6 +108,205 @@ void addConstraint(const Cells &cells,int count,std::map<Cells,int> &known,
 	pending.push_back(std::make_pair(cells,count));
 }
 
+// Find satisfying public-information models. Cells outside every clue are
+// interchangeable, so only their available count enters the search.
+class ConstraintSearch
+{
+	std::vector<Constraint> equations;
+	Cells cells,freeCells,degrees;
+	int mineCount;
+	Budget &budget;
+
+	void assign(int variable,int value,Cells &values,Cells &trail)
+	{
+		values[variable]=value;
+		trail.push_back(variable);
+	}
+
+	bool propagate(Cells &values,Cells &trail,int target,int freeSlots)
+	{
+		bool changed;
+		do
+		{
+			changed=false;
+			for(const Constraint &equation:equations)
+			{
+				int remaining=equation.second,unknown=0;
+				for(int variable:equation.first)
+				{
+					budget.tick();
+					if(values[variable]<0)unknown++;
+					else remaining-=values[variable];
+				}
+				if(remaining<0||remaining>unknown)return false;
+				if(unknown&&(remaining==0||remaining==unknown))
+					for(int variable:equation.first)
+					{
+						budget.tick();
+						if(values[variable]<0)
+						{
+							assign(variable,remaining?1:0,values,trail);
+							changed=true;
+						}
+					}
+			}
+			int remaining=target,unknown=0;
+			for(int value:values)
+			{
+				budget.tick();
+				if(value<0)unknown++;
+				else remaining-=value;
+			}
+			if(remaining<0||remaining>unknown+freeSlots)return false;
+			if(unknown&&(remaining==0||remaining==unknown+freeSlots))
+				for(std::size_t variable=0;variable<values.size();variable++)
+				{
+					budget.tick();
+					if(values[variable]<0)
+					{
+						assign(static_cast<int>(variable),remaining?1:0,values,trail);
+						changed=true;
+					}
+				}
+		}while(changed);
+		return true;
+	}
+
+	bool findModel(int fixedVariable,int fixedValue,int freeAssumption,Cells &model)
+	{
+		budget.check();
+		Cells values(cells.size(),-1),trail;
+		if(fixedVariable>=0)assign(fixedVariable,fixedValue,values,trail);
+		const int target=mineCount-(freeAssumption>=0?freeAssumption:0);
+		const int freeSlots=static_cast<int>(freeCells.size())-(freeAssumption>=0?1:0);
+		struct Branch
+		{
+			int variable;
+			bool tryMine;
+			std::size_t restoreTo;
+		};
+		std::vector<Branch> branches;
+		while(true)
+		{
+			budget.check();
+			if(propagate(values,trail,target,freeSlots))
+			{
+				int variable=-1;
+				for(std::size_t next=0;next<values.size();next++)
+				{
+					budget.tick();
+					if(values[next]<0&&(variable<0||degrees[next]>degrees[variable]))
+						variable=static_cast<int>(next);
+				}
+				if(variable<0)
+				{
+					model=values;
+					return true;
+				}
+				branches.push_back({variable,true,trail.size()});
+				assign(variable,0,values,trail);
+				continue;
+			}
+			// An explicit stack and assignment trail keep memory linear in the
+			// number of variables, including when a branch needs deep search.
+			bool retry=false;
+			while(!branches.empty())
+			{
+				Branch &branch=branches.back();
+				while(trail.size()>branch.restoreTo)
+				{
+					budget.tick();
+					values[trail.back()]=-1;
+					trail.pop_back();
+				}
+				if(branch.tryMine)
+				{
+					branch.tryMine=false;
+					assign(branch.variable,1,values,trail);
+					retry=true;
+					break;
+				}
+				branches.pop_back();
+			}
+			if(!retry)return false;
+		}
+	}
+
+public:
+	ConstraintSearch(const std::vector<Constraint> &source,const Cells &hidden,
+		int remainingMines,Budget &timeBudget):mineCount(remainingMines),budget(timeBudget)
+	{
+		std::map<int,int> index;
+		for(const Constraint &equation:source)
+		{
+			Cells variables;
+			for(int cell:equation.first)
+			{
+				budget.tick();
+				auto inserted=index.insert(std::make_pair(cell,static_cast<int>(cells.size())));
+				if(inserted.second)
+				{
+					cells.push_back(cell);
+					degrees.push_back(0);
+				}
+				const int variable=inserted.first->second;
+				variables.push_back(variable);
+				degrees[variable]++;
+			}
+			equations.push_back(std::make_pair(variables,equation.second));
+		}
+		for(int cell:hidden)
+		{
+			budget.tick();
+			if(!index.count(cell))freeCells.push_back(cell);
+		}
+	}
+
+	Deductions deduce()
+	{
+		Deductions result;
+		Cells model,possible(cells.size(),0);
+		int freePossible=0;
+		auto remember=[&]()
+		{
+			int remaining=mineCount;
+			for(std::size_t variable=0;variable<model.size();variable++)
+			{
+				budget.tick();
+				possible[variable]|=1<<model[variable];
+				remaining-=model[variable];
+			}
+			// Each free cell can occupy either role whenever that role occurs
+			// anywhere in this interchangeable group in a satisfying model.
+			if(remaining<static_cast<int>(freeCells.size()))freePossible|=1;
+			if(remaining>0)freePossible|=2;
+		};
+		if(!findModel(-1,0,-1,model))throw std::invalid_argument("inconsistent public clues");
+		remember();
+		for(std::size_t variable=0;variable<cells.size();variable++)
+		{
+			budget.tick();
+			if(possible[variable]==3)continue;
+			const int value=possible[variable]==2?1:0;
+			// A single satisfying model does not prove a cell. Only exhausting
+			// the opposite assumption makes its value a valid deduction.
+			if(!findModel(static_cast<int>(variable),1-value,-1,model))
+			{
+				(value?result.mines:result.safe).push_back(cells[variable]);
+				return result;
+			}
+			remember();
+		}
+		if(!freeCells.empty()&&freePossible!=3)
+		{
+			const int value=freePossible==2?1:0;
+			if(!findModel(-1,0,1-value,model))
+				(value?result.mines:result.safe)=freeCells;
+		}
+		return result;
+	}
+};
+
 Deductions deduceWith(const Neighbors &neighbors,int mineCount,
 	const Cells &visible,Budget &budget)
 {
@@ -156,7 +355,7 @@ Deductions deduceWith(const Neighbors &neighbors,int mineCount,
 		return result;
 	}
 	// All derived sets stay within an original eight-cell neighborhood. The
-	// global mine count is used above, not expanded into a huge subset system.
+	// global mine count is handled separately, including in the search below.
 	std::vector<Cells> touching(visible.size());
 	for(std::size_t index=0;index<pending.size();index++)
 	{
@@ -203,7 +402,8 @@ Deductions deduceWith(const Neighbors &neighbors,int mineCount,
 			touching[cell].push_back(static_cast<int>(index));
 		}
 	}
-	return result;
+	ConstraintSearch search(pending,hidden,mineCount-marked,budget);
+	return search.deduce();
 }
 
 struct Solution

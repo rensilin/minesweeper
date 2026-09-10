@@ -17,11 +17,24 @@ The solver starts with only the first clue. It repeatedly opens proven safe
 cells and records proven mines. Its deductions use visible clue equations,
 subset differences and the remaining mine count. Derived constraints may be
 combined further: there is no limit on how many original clues contributed to
-a deduction. The total mine count is used only when every remaining hidden cell
-must be safe or every remaining hidden cell must be a mine; it does not enter
-the subset-difference closure. The solver is sound but is not required to find
-every possible deduction. Hidden mine positions are used only to reveal a proven safe cell's
-clue and to recognize completion, never as a deduction premise.
+a deduction. When these rules stall, the solver starts a depth-first constraint
+search using only the visible clue equations and remaining total mine count.
+It branches on an unknown cell participating in the most constraints, tries
+safe then mined, propagates each assumption, and backtracks on contradictions.
+An assignment trail and explicit branch stack avoid copying full states at
+each depth. Unknown cells outside all clues are interchangeable and represented
+by their count rather than enumerating their individual placements.
+
+The search first finds one satisfying model, then tests the opposite value of
+each cell not already seen both safe and mined in valid models. An unsatisfiable
+opposite assumption proves the cell's value. A satisfying counterexample is
+also reused to establish possible values of other cells. Finding one model is
+never sufficient to play its guessed moves. Once a forced cell is found, the
+solver applies that deduction and resumes from the newly visible information.
+If both values are possible for every hidden cell, this candidate is stuck.
+The search shares the generation deadline; an interrupted proof never becomes
+a deduction or a successful board. Hidden mine positions are used only to
+reveal a proven safe cell's clue and to recognize completion, never as a premise.
 
 When the solver stops, the generator chooses an unresolved neighborhood of a
 visible clue. It tries to empty or fill that neighborhood, moving the same
