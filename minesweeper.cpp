@@ -50,7 +50,7 @@
 
 using namespace std;
 
-const string version="v2.0";
+const string version="v3.0";
 
 struct termios org_opts;
 
